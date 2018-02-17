@@ -1,0 +1,40 @@
+{
+  "name": "stone",
+  "version": "0.0.1",
+  "description": "A typey and strictish (but simple) language which transpiles to JavaScript",
+  "author": "Keegan Leitz",
+  "license": "MIT",
+  "main": "./src/index.js",
+  "scripts": {
+    "babel": "babel src/index.js -o dist/bundle.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kjleitz/stone.git"
+  },
+  "keywords": [
+    "stone",
+    "javascript",
+    "language",
+    "type",
+    "immutable",
+    "proto"
+  ],
+  "bugs": {
+    "url": "https://github.com/kjleitz/stone/issues"
+  },
+  "homepage": "https://github.com/kjleitz/stone#readme",
+  "devDependencies": {
+    "babel-cli": "^6.26.0",
+    "babel-core": "^6.26.0",
+    "babel-preset-env": "^1.6.1",
+    "eslint": "^4.17.0",
+    "eslint-config-airbnb": "^16.1.0",
+    "eslint-plugin-import": "^2.8.0",
+    "eslint-plugin-jsx-a11y": "^6.0.3",
+    "eslint-plugin-react": "^7.6.1",
+    "http-server": "^0.11.1",
+    "underscore": "^1.8.3"
+  }
+}
