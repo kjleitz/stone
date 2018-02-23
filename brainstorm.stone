@@ -28,8 +28,8 @@ to_num(0)        #=> 0
 to_num('')       #=> 0
 to_num([])       #=> 0
 to_num({})       #=> 0
-to_num(['2', 3]) #=> 0
-to_num(['2'])    #=> 2
+to_num(['2', 3]) #=> 0 # this...
+to_num(['2'])    #=> 2 # ...and this are silly. avoid this JS quirk in the future.
 
 # if the return value has a "to_#{return type downcased}" method, it's called in
 # order to coerce that value

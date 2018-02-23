@@ -1,2 +1,199 @@
 # stone
-A typey and strictish (but simple) language which transpiles to JavaScript
+
+## a language
+
+a typey and strictish (but simple) language which will eventually transpile to JavaScript
+
+## setup
+
+clone the repo, `npm install`, :+1:
+
+## trying it out
+
+1) run the dev server:
+
+```
+me@lappy:~$ cd stone/
+me@lappy:~$ http-server
+```
+
+2) open chrome and navigate to `localhost:8080`
+
+3) open dev tools console (cmd + alt + j)
+
+now available on `window`:
+- `_` (the underscore.js object for convenience)
+- `Lexer` (the class)
+- `lex` (a `Lexer` instance loaded with a short bit of test text)
+- `fileText` (the text associated with `lex`)
+- `stoneLex` (a `Lexer` instance loaded with the contents of `/brainstorm.stone`)
+- `stoneFileText` (the text associated with `stoneLex`)
+
+things to try:
+- `lex.traverse()` (returns a list of tokens from the test text)
+- `stoneLex.traverse()` (returns a list of tokens from the entire `/brainstorm.stone` text)
+- whatever else you wanna play with... _the world is your oyster_
+
+## lazy language spec
+
+(also found in `/brainstorm.stone`)
+
+### variables
+
+```
+# every variable is a constant, no reassignment allowed
+foo = 1
+foo = 2 # nope
+```
+
+### functions
+
+```
+# implicit returns
+def add(n, m):Num
+  n + m
+
+def add(n, m):Num n + m
+
+add = (n, m):Num n + m
+
+add = (n, m):Num
+  n + m
+
+# returns null (return type is null if not specified)
+log_1 = (msg):
+  console.log(msg)
+
+# returns 0 (coerces return value to Num, i.e., undefined => 0)
+log_2 = (msg):Num
+  console.log(msg)
+
+# the return value of a function is coerced to the return type
+to_num = (foo):Num foo
+to_num(true)     #=> 1
+to_num(false)    #=> 0
+to_num(0)        #=> 0
+to_num('')       #=> 0
+to_num([])       #=> 0
+to_num({})       #=> 0
+to_num(['2', 3]) #=> 0 # this...
+to_num(['2'])    #=> 2 # ...and this are silly. avoid this JS quirk in the future.
+
+# if the return value has a "to_#{return type downcased}" method, it's called in
+# order to coerce that value
+foo.to_string()           #=> "foo"
+to_str = (bar):String bar
+to_str(foo)               #=> "foo"
+```
+
+### classes
+
+```
+# initialize an instance of a class (a prototype; see the definition below) like this:
+Dog.with({
+  name:   'my boy'
+  breed:  'husky'
+  gender: 'male'
+})
+
+# define a prototype like this
+proto Pet shaped { # shape: define props and their types (props are constants post-init)
+  # default value is the empty val for that type (so, here, it's: '')
+  breed:Str
+
+  # define a setter/transformation for a property; called with a param for the
+  # prop when it's initialized, prop is set to the return val
+  name:Str set
+    names = name.split(' ')
+    proper_names = names.map((nom):Str nom.capitalize())
+    proper_names.join(' ')
+
+  gender:Str                        # default val: ''
+  age:Num                           # default val: 0
+  temper:Str 'friendly'             # this would define a default value (overridden if one is provided on init)
+  temper:Str set name || 'friendly' # this would do the same as the line above
+  temper:Str set 'friendly'         # this syntax would override any prop given and only ever set it to 'friendly'
+
+  # you can define functions here like always if you need to make helpers or
+  # or separate concerns, etc. (functions here are not public)
+  properize_name = (name):Str
+    names = name.split(' ')
+    proper_names = names.map((nom):Str nom.capitalize())
+    proper_names.join(' ')
+
+  # this will do the same thing, ultimately, as the in-place 'name' setter block above
+  name:Str set properize_name(name)
+
+} extends { # body: do everything else, define methods, etc.
+
+  def beg(food):Str "gimme some #{food}"
+
+  def tag():Str
+    description = "#{name}, a #{gender} #{breed}"
+    misc_details = "(I'm #{age} years young, and very #{temper}!)"
+    [description, misc_details].join("\n")
+
+  def foo(): null # function declarations are public (and hoisted, btw)
+  foo = (): null  # function expressions are private (and not hoisted)
+}
+
+# extend a prototype
+proto Dog from Pet shaped {
+  temper:Str     'loyal'   # props which exist on Pet already must match super's type
+  ear_type:Str   'floppy'  # new props can be defined with whatever type you want
+  bark_sound:Str 'woof'
+} extends {
+  def bark(sound = bark_sound):Str
+    "#{sound}, #{sound}"
+
+  def tag():Str
+    super() + "\n(a dog)"
+}
+
+# the "constructor" of a class is pre-built with the props and prop setters (defined
+# in the shape), and you pass the initial state values in a hash when you instantiate
+# the object... if you need to perform some actions when the object is initialized,
+# beyond the prop setting behavior specified by the shape, you can do that stuff by
+# defining some callbacks called before_init and after_init.
+# an after_init
+proto Cat from Pet shaped {
+  temper:Str     'aloof'
+  meow_sound:Str 'meow'
+} extends {
+
+  # before_init must return an object/hash, and takes the "shape" hash passed to
+  # the class on instantiation as an argument. The return value "replaces" the
+  # shape hash passed to it initially, becoming the source of data used in the
+  # shape block of props and setters. It has access to the context via `this`
+  # but it's basically just an empty object at this stage
+  def before_init(shape):Obj
+    shape.layer({ meow_sound: shape.meow_sound.upcase() })
+
+  # after_init doesn't have a return value. It has access to the newly initialized
+  # object via `this`, but can't _set_ any properties on the object (since they're
+  # immutable). So, this callback would mainly be used for exerting side effects
+  # (maybe emitting signals/logging/triggering events, etc.)
+  def after_init():
+    # prints "MEOW MEOW... MEOW!" by default in this example class
+    console.log(this.meow())
+
+  def meow(sound = meow_sound):Str
+    "#{sound} #{sound}... #{sound}!"
+}
+
+# bind a function at definition with <context> before the arguments
+proto Human shaped {
+  name:Str
+} extends {
+  def say_my_name<this>():Str
+    this.name
+}
+```
+
+# license
+
+MIT license (see `/LICENSE`)
+
+# contributing
+
+feel free to submit issues or pull requests to [this GitHub repo](https://github.com/kjleitz/stone) if you think this is worth anything more than poo.

@@ -1564,9 +1564,19 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 // for testing it out in chrome/dev tools... don't judge
 window.addEventListener('load', function () {
   window.Lexer = _lexer2.default;
-  window.fileText = "foo = 1 + 2\nbar(baz) {return 'hi, how's it going?'}\nbar(foo)";
-  window.lex = new _lexer2.default(window.fileText);
+  window.fileText = "foo = 'me \"says\":'\ndef bar(baz):Str\n  abc = 'hi, how\\'s it going?'\n  return baz + abc\n\n# this is just a comment\nbar(foo)";
+  window.lex = new _lexer2.default({ fileText: window.fileText });
   window._ = _underscore2.default;
+
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', '/brainstorm.stone');
+  xhr.onreadystatechange = function (event) {
+    if (event.target.readyState === 4) {
+      window.stoneFileText = event.target.responseText;
+      window.stoneLex = new _lexer2.default({ fileText: window.stoneFileText });
+    }
+  };
+  xhr.send();
 });
 
 },{"./lexer.js":3,"underscore":1}],3:[function(require,module,exports){
@@ -1587,49 +1597,146 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 var TOKEN = {
-  types: ['whitespace', 'identifier', 'string', 'number', 'operator', 'grouping'],
+  types: ['whitespace', 'comment', 'word', 'string', 'number', 'operator', 'grouping', 'delimiter'],
+
+  ignorableTypes: ['whitespace', 'comment'],
+
+  names: {
+    word: {
+      // primitive types
+      Bool: 'Boolean',
+      Boolean: 'Boolean',
+      Null: 'Null',
+      Num: 'Number',
+      Number: 'Number',
+      Obj: 'Object',
+      Object: 'Object',
+      Str: 'String',
+      String: 'String',
+
+      // special values
+      false: 'false',
+      null: 'null',
+      this: 'this',
+      true: 'true',
+      super: 'super',
+
+      // logical flow
+      else: 'else',
+      for: 'for',
+      if: 'if',
+      raise: 'raise',
+      return: 'return',
+      while: 'while',
+
+      // declaration
+      extends: 'extends',
+      def: 'def',
+      proto: 'proto',
+      set: 'set',
+      shaped: 'shaped'
+
+      // anything else is 'identifier'
+    },
+
+    operator: {
+      // dispatch
+      '.': 'dot',
+      ':': 'colon', // not sure if this is more dispatch or assignment
+
+      // assignment
+      '=': 'equals',
+
+      // math
+      '/': 'slash',
+      '%': 'modulo',
+      '-': 'minus',
+      '+': 'plus',
+      '*': 'star',
+      '**': 'doubleStar',
+
+      // comparison
+      '==': 'equalTo',
+      '>': 'greaterThan',
+      '>=': 'greaterThanOrEqualTo',
+      '<': 'lessThan',
+      '<=': 'lessThanOrEqualTo',
+      '!=': 'notEqualTo',
+
+      // boolean
+      '&&': 'and',
+      '!': 'not',
+      '||': 'or'
+    },
+
+    grouping: {
+      '{': 'openBrace',
+      '}': 'closeBrace',
+      '[': 'openBracket',
+      ']': 'closeBracket',
+      '(': 'openParen',
+      ')': 'closeParen'
+    },
+
+    delimiter: {
+      ',': 'comma'
+    }
+  },
 
   firstCharMatches: {
-    whitespace: "\\s",
-    identifier: '[_A-Za-z]',
-    string: '[\'"]',
-    number: '[\\d.]', // no negative; leading "-" will be unary operator
-    operator: '[-+*/=<>!&%~$^:]',
-    grouping: '[[\\](){}]'
+    whitespace: /\s/,
+    comment: /#/,
+    word: /[_A-Za-z]/,
+    string: /['"]/,
+    number: /[\d.]/, // no negative; leading "-" will be unary operator
+    operator: /[-+*/=<>!&|%~$^:.]/,
+    grouping: /[[\](){}]/,
+    delimiter: /,/
   },
 
   fullMatches: {
     // (whitespace)+
     // => literal as-is; to be ignored
-    whitespace: '\\s+',
+    whitespace: /^\s+/,
+
+    // octothorpe, (anything)*, end of line
+    // => literal as-is; to be ignored
+    comment: /^#.*?[\n$]/,
 
     // (underscore || letter), (word character)*
     // => match predefined set of key words, or variable as-is
-    identifier: '^[_A-Za-z]\\w*',
+    word: /^[_A-Za-z]\w*/,
 
     // a quote, (any escaped char || anything but the quote)*, the quote
     // => literal as-is
-    string: '^([\'"])(\\.|[^\\1])*\\1',
+    string: /^'(\\.|[^'])*?'|^"(\\.|[^"])*?"/,
 
     // (digit)*, (decimal point)?, (digit)+
     // => literal as-is
-    number: '^\\d*\\.?\\d+',
+    number: /^\d*\.?\d+/,
 
     // (operator)+
     // => match a set of predefined operators
-    operator: '^[-+*/=<>!&%~$^:]+',
+    operator: /^[-+*/=<>!&|%~$^:.]+/,
 
     // (opening symbol || closing symbol)
     // can't do nested grouping with JS regexes easily; so handle
     // groups with code
-    grouping: '^[[\\](){}]'
+    grouping: /^[[\](){}]/,
+
+    // (comma || colon)
+    // literal as-is
+    delimiter: /^,/
   },
 
+  typeIsSignificant: function typeIsSignificant(tokenType) {
+    return !_underscore2.default.contains(this.ignorableTypes, tokenType);
+  },
   firstCharRegexForType: function firstCharRegexForType(type) {
-    return new RegExp(this.firstCharMatches[type]);
+    return this.firstCharMatches[type];
   },
   fullRegexForType: function fullRegexForType(type) {
-    return new RegExp(this.fullMatches[type]);
+    return this.fullMatches[type];
   },
 
 
@@ -1662,6 +1769,15 @@ var TOKEN = {
     var fullRegex = this.fullRegexForType(type);
     var matched = stringStartingWithToken.match(fullRegex);
     return matched ? matched[0] : '';
+  },
+  nameForLexemeByType: function nameForLexemeByType(lexeme, type) {
+    var names = this.names[type];
+    if (_underscore2.default.isUndefined(names)) return 'literal';
+
+    var name = names[lexeme];
+    if (type === 'word' && _underscore2.default.isUndefined(name)) return 'identifier';
+
+    return name;
   }
 };
 
@@ -1706,22 +1822,41 @@ var Lexer = function () {
   }, {
     key: 'indentLevelAt',
     value: function indentLevelAt(charIndex) {
-      // replace tabs with space each, then match leading single spaces
+      // replace tabs with spaces, then match leading single spaces
       var tabSpaces = ' '.repeat(this.spacesPerTab);
       var spacedLine = this.lineAt(charIndex).replace(/\t/g, tabSpaces);
       var indent = spacedLine.match(/^ +/);
       return indent ? indent[0].length : 0;
     }
   }, {
+    key: 'tokenError',
+    value: function tokenError(tokenProp, problemDesc, charIndex) {
+      var lineNum = this.lineNumAt(charIndex);
+      var colNum = this.colNumAt(charIndex);
+      var line = this.lineAt(charIndex);
+      var errorDesc = 'Token ' + tokenProp + ' at L' + lineNum + '/C' + colNum + ' is ' + problemDesc + '!';
+      var errorLine = '\n  ' + line + '...';
+      var errorMark = ' ' + ' '.repeat(line.length) + '^';
+      throw [errorDesc, errorLine, errorMark].join("\n");
+    }
+  }, {
     key: 'tokenStartingAt',
     value: function tokenStartingAt(charIndex) {
-      var text = this.textAfter(charIndex);
-      var type = TOKEN.typeForString(text);
-      var lexeme = TOKEN.matchStringByType(text, type);
       var line = this.lineNumAt(charIndex);
       var column = this.colNumAt(charIndex);
+      var text = this.textAfter(charIndex);
+
+      var type = TOKEN.typeForString(text);
+      if (_underscore2.default.isUndefined(type)) throw this.tokenError('type', 'undefined', charIndex);
+
+      var lexeme = TOKEN.matchStringByType(text, type);
+      if (_underscore2.default.isEmpty(lexeme)) throw this.tokenError('lexeme', 'empty', charIndex);
+
+      var name = TOKEN.nameForLexemeByType(lexeme, type);
+      if (_underscore2.default.isUndefined(name)) throw this.tokenError('name', 'undefined', charIndex);
+
       var indent = this.indentLevelAt(charIndex);
-      return { type: type, lexeme: lexeme, line: line, column: column, indent: indent };
+      return { type: type, lexeme: lexeme, name: name, line: line, column: column, indent: indent };
     }
   }, {
     key: 'traverse',
@@ -1731,8 +1866,9 @@ var Lexer = function () {
 
       if (currentCharIndex >= this.fileText.length) return tokenList;
       var token = this.tokenStartingAt(currentCharIndex);
-      if (token.type !== 'whitespace') tokenList.push(token);
+      if (TOKEN.typeIsSignificant(token.type)) tokenList.push(token);
       var nextCharIndex = currentCharIndex + token.lexeme.length;
+      if (currentCharIndex = 400) debugger;
       return this.traverse(tokenList, nextCharIndex);
     }
   }]);
