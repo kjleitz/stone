@@ -1868,7 +1868,6 @@ var Lexer = function () {
       var token = this.tokenStartingAt(currentCharIndex);
       if (TOKEN.typeIsSignificant(token.type)) tokenList.push(token);
       var nextCharIndex = currentCharIndex + token.lexeme.length;
-      if (currentCharIndex = 400) debugger;
       return this.traverse(tokenList, nextCharIndex);
     }
   }]);
