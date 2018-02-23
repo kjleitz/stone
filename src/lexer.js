@@ -264,7 +264,6 @@ export default class Lexer {
     const token = this.tokenStartingAt(currentCharIndex);
     if (TOKEN.typeIsSignificant(token.type)) tokenList.push(token);
     const nextCharIndex = currentCharIndex + token.lexeme.length;
-    if (currentCharIndex = 400) debugger;
     return this.traverse(tokenList, nextCharIndex);
   }
 }
