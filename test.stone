@@ -1,4 +1,18 @@
-foo = 1 + 2
-bar = 1 + -2
-baz = 10 < 20
-xyz = !baz
+# foo = 1 + 2
+# bar = 1 + -2
+# baz = 10 < 20
+# xyz = !baz
+
+# FUNCTIONS
+
+# implicit returns
+def add(n, m):Num
+  n + m
+
+def add(n, m):Num n + m
+
+add = (n, m):Num n + m
+
+add = (n, m):Num
+  n + m
+  "hey"

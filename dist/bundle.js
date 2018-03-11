@@ -1996,7 +1996,7 @@ var Syntaxer = function () {
       if (openIndex < 0) return [];
 
       var openStack = [];
-      var closeIndex = _underscore2.default.findIndex(tokens.slice(openIndex), function (token) {
+      var closeIndex = openIndex + _underscore2.default.findIndex(tokens.slice(openIndex), function (token) {
         if (token.type !== 'grouping') return false;
 
         if (_this2.isOpenGroupToken(token)) {
@@ -2037,15 +2037,131 @@ var Syntaxer = function () {
       return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
     }
   }, {
+    key: 'indexOfFirstFunctionColon',
+    value: function indexOfFirstFunctionColon(tokens) {
+      return _underscore2.default.findIndex(tokens, function (token, index) {
+        if (token.name !== 'colon') return false;
+
+        // regular function definitions MUST provide an argument group to the left
+        // of the colon, and prop setter functions MUST provide a prop name to the
+        // left of the colon, so if nothing's to the left, it's not a function
+        var leftToken = tokens[index - 1];
+        if (_underscore2.default.isUndefined(leftToken)) return false;
+
+        // for regular function definitions, e.g.,
+        //   def foo(a, b):Str "#{a} foos #{b}!"   # hoisted, returns a string
+        //   foo = (a, b):Str "#{a}#{b}"           # not hoisted, returns a string
+        //   foo = (a, b): console.log(a, b)       # not hoisted, returns null
+        //   foo = (a, b):                         # not hoisted, returns null, no-op is valid
+
+        // if it provides an argument group before the colon, it's valid, and it
+        // allows anything to follow (no-op is also valid)
+        if (leftToken.name === 'closeParen') return true;
+
+        // for prop setter definitions within proto shape body, e.g.,
+        //   breed:Str set "#{breed} is da best!"  # explicit setter; prop name is passed as implicit argument
+        //   breed:Str "husky"                     # defaults to 'husky'; short for breed:Str set breed || "husky"
+        //   breed:Str                             # defaults to ''; short for breed:Str set breed
+
+        // prop setter definitions MUST provide a non-null return type to the
+        // right of the colon
+        var rightToken = tokens[index + 1];
+        if (_underscore2.default.isUndefined(rightToken)) return false;
+        if (rightToken.type !== 'word') return false;
+
+        // the return type must be DIRECTLY after the colon (in hashes there MUST
+        // be a space after the colon, to differentiate them from return types)
+        var spacesAfterColon = rightToken.column - token.column - 1;
+        return spacesAfterColon === 0;
+      });
+    }
+  }, {
+    key: 'boundsOfFirstFunctionDefinitionInTokens',
+    value: function boundsOfFirstFunctionDefinitionInTokens(tokens) {
+      var _this3 = this;
+
+      var colonIndex = this.indexOfFirstFunctionColon(tokens);
+      if (colonIndex < 0) return [];
+
+      var colonToken = tokens[colonIndex];
+      var tokensBeforeColon = _underscore2.default.first(tokens, colonIndex);
+      var functionIsRegular = _underscore2.default.last(tokensBeforeColon).name === 'closeParen';
+      var argGroupOpenIndex = _underscore2.default.findLastIndex(tokensBeforeColon, function (token, index) {
+        if (!functionIsRegular) return true;
+        if (token.name !== 'openParen') return false;
+
+        var currentTokens = tokensBeforeColon.slice(index, colonIndex);
+        return _this3.hasBalancedGrouping(currentTokens);
+      });
+
+      var tokensBeforeArgs = _underscore2.default.first(tokensBeforeColon, argGroupOpenIndex);
+      var tokenRightBeforeArgs = _underscore2.default.last(tokensBeforeArgs);
+      var functionIsAnonymous = _underscore2.default.isUndefined(tokenRightBeforeArgs) || tokenRightBeforeArgs.name !== 'identifier';
+
+      if (functionIsAnonymous && !functionIsRegular) {
+        var position = 'L' + colonToken.line + '/C' + colonToken.column;
+        throw 'Prop setter functions cannot be anonymous; error at ' + position;
+      }
+
+      if (functionIsAnonymous && tokenRightBeforeArgs && tokenRightBeforeArgs.name === 'def') {
+        var _position = 'L' + colonToken.line + '/C' + colonToken.column;
+        throw 'Function declarations must be named; error at ' + _position;
+      }
+
+      var nameIndex = argGroupOpenIndex - 1;
+      var defIndex = argGroupOpenIndex - 2;
+      var defToken = tokens[defIndex];
+      var isDeclaration = defToken && defToken.name === 'def';
+
+      var startIndex = functionIsAnonymous ? argGroupOpenIndex : isDeclaration ? defIndex : nameIndex;
+      var endIndex = _underscore2.default.findIndex(tokens, function (currentToken, index) {
+        if (index <= colonIndex) return false;
+
+        var nextToken = tokens[index + 1];
+        if (_underscore2.default.isUndefined(nextToken)) return true;
+        if (nextToken.line === currentToken.line) return false;
+
+        var currentTokens = _underscore2.default.first(tokens, index + 1);
+        if (!_this3.hasBalancedGrouping(currentTokens)) return false;
+        if (nextToken.indent > colonToken.indent) return false;
+
+        return true;
+      });
+
+      if (endIndex < 0) {
+        var startToken = tokens[startIndex];
+        var _position2 = 'L' + startToken.line + '/C' + startToken.column;
+        throw 'Could not close function starting at ' + _position2;
+      }
+
+      return [startIndex, endIndex];
+    }
+  }, {
+    key: 'boundsOfAllFunctionDefinitionsInTokens',
+    value: function boundsOfAllFunctionDefinitionsInTokens(tokens) {
+      var boundsPairs = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
+
+      if (_underscore2.default.isEmpty(tokens)) return boundsPairs;
+
+      var boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(tokens);
+      if (_underscore2.default.isEmpty(boundsOfFirstFn)) return boundsPairs;
+
+      boundsPairs.push(boundsOfFirstFn);
+      var closeIndex = boundsOfFirstFn[1];
+      var restOfTokens = tokens.slice(closeIndex + 1);
+      return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
+    }
+  }, {
     key: 'indexOfBinaryOperation',
     value: function indexOfBinaryOperation(operationName, tokens, _ref) {
-      var _this3 = this;
+      var _this4 = this;
 
       var validLeftTypes = _ref.validLeftTypes,
           validRightTypes = _ref.validRightTypes;
 
       var operatorNames = {
         assignment: ['equals'],
+        sequence: ['comma'],
         logicalOR: ['or'],
         logicalAND: ['and'],
         equalityComparison: ['equalTo', 'notEqualTo'],
@@ -2060,14 +2176,22 @@ var Syntaxer = function () {
       if (_underscore2.default.isEmpty(operatorNames)) throw 'Invalid operation type \'' + operationName + '\'';
 
       var groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
+      var fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
       var groupsArePresent = !_underscore2.default.isEmpty(groupBoundsPairs);
+      var fnDefsArePresent = !_underscore2.default.isEmpty(fnDefBoundsPairs);
 
       return _underscore2.default.findIndex(tokens, function (token, index) {
+        if (!_underscore2.default.contains(operatorNames, token.name)) return false;
+
         var isInsideGroup = groupsArePresent && _underscore2.default.any(groupBoundsPairs, function (bounds) {
           return index > bounds[0] && index < bounds[1];
         });
+        if (isInsideGroup) return false;
 
-        if (isInsideGroup || !_underscore2.default.contains(operatorNames, token.name)) return false;
+        var isInsideFunctionDefinition = fnDefsArePresent && _underscore2.default.any(fnDefBoundsPairs, function (bounds) {
+          return index > bounds[0] && index < bounds[1];
+        });
+        if (isInsideFunctionDefinition) return false;
 
         var leftToken = tokens[index - 1];
         if (_underscore2.default.isUndefined(leftToken)) return false;
@@ -2075,10 +2199,10 @@ var Syntaxer = function () {
         var rightToken = tokens[index + 1];
         if (_underscore2.default.isUndefined(rightToken)) return false;
 
-        var leftIsValid = _underscore2.default.contains(validLeftTypes, leftToken.type) || leftToken.name === 'identifier' || _this3.isCloseGroupToken(leftToken);
+        var leftIsValid = _underscore2.default.contains(validLeftTypes, leftToken.type) || leftToken.name === 'identifier' || _this4.isCloseGroupToken(leftToken);
         if (!leftIsValid) return false;
 
-        var rightIsValid = _underscore2.default.contains(validRightTypes, rightToken.type) || rightToken.name === 'identifier' || _this3.isOpenGroupToken(rightToken);
+        var rightIsValid = _underscore2.default.contains(validRightTypes, rightToken.type) || rightToken.name === 'identifier' || _this4.isOpenGroupToken(rightToken);
         return leftIsValid && rightIsValid;
       });
     }
@@ -2095,6 +2219,13 @@ var Syntaxer = function () {
       var validLeftTypes = ['word'];
       var validRightTypes = ['word', 'number', 'string', 'operator'];
       return this.indexOfBinaryOperation('assignment', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
+  }, {
+    key: 'indexOfSequence',
+    value: function indexOfSequence(tokens) {
+      var validLeftTypes = ['word', 'string', 'number'];
+      var validRightTypes = ['word', 'string', 'number', 'operator'];
+      return this.indexOfBinaryOperation('sequence', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
     key: 'indexOfLogicalOR',
@@ -2162,20 +2293,33 @@ var Syntaxer = function () {
   }, {
     key: 'firstStatementFromTokens',
     value: function firstStatementFromTokens(tokens) {
-      var _this4 = this;
+      var _this5 = this;
 
       if (_underscore2.default.isEmpty(tokens)) return [];
+
+      var groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
+      var fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
+      var groupsArePresent = !_underscore2.default.isEmpty(groupBoundsPairs);
+      var fnDefsArePresent = !_underscore2.default.isEmpty(fnDefBoundsPairs);
 
       var statementEndPos = _underscore2.default.findIndex(tokens, function (currentToken, index) {
         var nextToken = tokens[index + 1];
         if (_underscore2.default.isUndefined(nextToken)) return true;
 
-        if (nextToken.line !== currentToken.line) {
-          var currentTokens = _underscore2.default.first(tokens, index + 1);
-          return _this4.hasBalancedGrouping(currentTokens);
-        }
+        var isInsideGroup = groupsArePresent && _underscore2.default.any(groupBoundsPairs, function (bounds) {
+          return index > bounds[0] && index < bounds[1];
+        });
+        if (isInsideGroup) return false;
 
-        return false;
+        var isInsideFunctionDefinition = fnDefsArePresent && _underscore2.default.any(fnDefBoundsPairs, function (bounds) {
+          return index > bounds[0] && index < bounds[1];
+        });
+        if (isInsideFunctionDefinition) return false;
+
+        if (nextToken.line === currentToken.line) return false;
+
+        var currentTokens = _underscore2.default.first(tokens, index + 1);
+        return _this5.hasBalancedGrouping(currentTokens);
       });
 
       return _underscore2.default.first(tokens, statementEndPos + 1);
@@ -2250,6 +2394,38 @@ var Syntaxer = function () {
       };
     }
   }, {
+    key: 'sequenceNode',
+    value: function sequenceNode(firstCommaIndex, tokens) {
+      var _this6 = this;
+
+      var firstComma = tokens[firstCommaIndex];
+      if (firstComma.name !== 'comma') {
+        var position = 'L' + firstComma.line + '/C' + firstComma.column;
+        throw 'Expected to find comma at ' + position;
+      }
+
+      var sequenceSets = _underscore2.default.reduce(tokens, function (sets, token) {
+        if (token.name === 'comma') {
+          sets.push([]);
+        } else {
+          _underscore2.default.last(sets).push(token);
+        }
+
+        return sets;
+      }, [[]]);
+
+      var sequenceNodes = _underscore2.default.map(sequenceSets, function (set) {
+        return _this6.pemdasTreeFromStatement(set);
+      });
+
+      return {
+        operation: 'sequence',
+        startToken: _underscore2.default.first(tokens),
+        endToken: _underscore2.default.last(tokens),
+        sequenceNodes: sequenceNodes
+      };
+    }
+  }, {
     key: 'groupNode',
     value: function groupNode(operationName, tokens) {
       var correctOpenTokenName = {
@@ -2268,8 +2444,8 @@ var Syntaxer = function () {
       var closeToken = _underscore2.default.last(tokens);
 
       if (!this.openTokenMatchesCloser(openToken, closeToken)) {
-        var _position = 'L' + closeToken.line + '/C' + closeToken.column;
-        throw 'Expected to find ' + operationName + ' closing symbol at ' + _position;
+        var _position3 = 'L' + closeToken.line + '/C' + closeToken.column;
+        throw 'Expected to find ' + operationName + ' closing symbol at ' + _position3;
       }
 
       var innerTokens = tokens.slice(1, -1);
@@ -2282,6 +2458,52 @@ var Syntaxer = function () {
       };
     }
   }, {
+    key: 'functionDefinitionNode',
+    value: function functionDefinitionNode(boundsOfDef, tokens) {
+      var firstToken = tokens[0];
+      var secondToken = tokens[1];
+
+      if (boundsOfDef[0] !== 0) {
+        var position = 'L' + firstToken.line + '/C' + firstToken.column;
+        throw 'Expected function definition at ' + position;
+      }
+
+      var colonIndex = this.indexOfFirstFunctionColon(tokens);
+      var colonToken = tokens[colonIndex];
+      var twoTokensToTheLeft = tokens[colonIndex - 2];
+      var oneTokenToTheLeft = tokens[colonIndex - 1];
+      var oneTokenToTheRight = tokens[colonIndex + 1];
+      var twoTokensToTheRight = tokens[colonIndex + 2];
+
+      var hasArguments = oneTokenToTheLeft.name === 'closeParen';
+      var isPropSetter = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name === 'set';
+      var isPropDefault = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name !== 'set';
+      var isDeclaration = firstToken.name === 'def';
+      var isAnonymous = firstToken.name === 'openParen';
+
+      var spacesAfterColon = oneTokenToTheRight ? oneTokenToTheRight.column - colonToken.column - 1 : 999;
+      var isTyped = oneTokenToTheRight.type === 'word' && spacesAfterColon === 0;
+      var typeToken = isTyped ? oneTokenToTheRight : null;
+      var nameToken = isDeclaration ? secondToken : isPropSetter ? firstToken : null;
+
+      var boundsOfArgs = hasArguments ? this.boundsOfFirstGroupInTokens(tokens) : [];
+      var argumentsTokens = _underscore2.default.isEmpty(boundsOfArgs) ? [] : tokens.slice(boundsOfArgs[0] + 1, boundsOfArgs[1]);
+
+      var blockStartIndex = colonIndex + _underscore2.default.filter([isTyped, isPropSetter]).length + 1;
+      var blockTokens = tokens.slice(blockStartIndex);
+
+      return {
+        operationName: 'functionDefinition',
+        isDeclaration: isDeclaration,
+        isPropSetter: isPropSetter,
+        isPropDefault: isPropDefault,
+        nameToken: nameToken,
+        typeToken: typeToken,
+        argumentsNode: this.pemdasTreeFromStatement(argumentsTokens),
+        blockNodes: this.traverse(blockTokens)
+      };
+    }
+  }, {
     key: 'pemdasTreeFromStatement',
     value: function pemdasTreeFromStatement(statementTokens) {
       if (_underscore2.default.isEmpty(statementTokens)) {
@@ -2290,6 +2512,11 @@ var Syntaxer = function () {
 
       if (statementTokens.length === 1) {
         return this.identityNode(statementTokens[0]);
+      }
+
+      var indexOfSequence = this.indexOfSequence(statementTokens);
+      if (indexOfSequence !== -1) {
+        return this.sequenceNode(indexOfSequence, statementTokens);
       }
 
       var indexOfAssignment = this.indexOfAssignment(statementTokens);
@@ -2354,6 +2581,11 @@ var Syntaxer = function () {
 
       if (firstToken.name === 'not') {
         return this.unaryOperationNode('inversion', statementTokens);
+      }
+
+      var boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(statementTokens);
+      if (boundsOfFirstFn[0] === 0) {
+        return this.functionDefinitionNode(boundsOfFirstFn, statementTokens);
       }
 
       if (this.isOpenGroupToken(firstToken)) {

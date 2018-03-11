@@ -59,11 +59,11 @@ proto Pet shaped { # shape: define props and their types (props are constants po
     proper_names = names.map((nom):Str nom.capitalize())
     proper_names.join(' ')
 
-  gender:Str                        # default val: ''
-  age:Num                           # default val: 0
-  temper:Str 'friendly'             # this would define a default value (overridden if one is provided on init)
-  temper:Str set name || 'friendly' # this would do the same as the line above
-  temper:Str set 'friendly'         # this syntax would override any prop given and only ever set it to 'friendly'
+  gender:Str                          # default val: ''
+  age:Num                             # default val: 0
+  temper:Str 'friendly'               # this would define a default value (overridden if one is provided on init)
+  temper:Str set temper || 'friendly' # this would do the same as the line above
+  temper:Str set 'friendly'           # this syntax would override any prop given and only ever set it to 'friendly'
 
   # you can define functions here like always if you need to make helpers or
   # or separate concerns, etc. (functions here are not public)

@@ -65,7 +65,7 @@ export default class Syntaxer {
     if (openIndex < 0) return [];
 
     const openStack = [];
-    const closeIndex = _.findIndex(tokens.slice(openIndex), (token) => {
+    const closeIndex = openIndex + _.findIndex(tokens.slice(openIndex), (token) => {
       if (token.type !== 'grouping') return false;
 
       if (this.isOpenGroupToken(token)) {
@@ -100,12 +100,121 @@ export default class Syntaxer {
     boundsPairs.push(boundsOfFirstGroup);
     const closeIndex   = boundsOfFirstGroup[1];
     const restOfTokens = tokens.slice(closeIndex + 1);
-    return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs)
+    return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
+  }
+
+  indexOfFirstFunctionColon(tokens) {
+    return _.findIndex(tokens, (token, index) => {
+      if (token.name !== 'colon')          return false;
+
+      // regular function definitions MUST provide an argument group to the left
+      // of the colon, and prop setter functions MUST provide a prop name to the
+      // left of the colon, so if nothing's to the left, it's not a function
+      const leftToken = tokens[index - 1];
+      if (_.isUndefined(leftToken))        return false;
+
+      // for regular function definitions, e.g.,
+      //   def foo(a, b):Str "#{a} foos #{b}!"   # hoisted, returns a string
+      //   foo = (a, b):Str "#{a}#{b}"           # not hoisted, returns a string
+      //   foo = (a, b): console.log(a, b)       # not hoisted, returns null
+      //   foo = (a, b):                         # not hoisted, returns null, no-op is valid
+
+      // if it provides an argument group before the colon, it's valid, and it
+      // allows anything to follow (no-op is also valid)
+      if (leftToken.name === 'closeParen') return true;
+
+      // for prop setter definitions within proto shape body, e.g.,
+      //   breed:Str set "#{breed} is da best!"  # explicit setter; prop name is passed as implicit argument
+      //   breed:Str "husky"                     # defaults to 'husky'; short for breed:Str set breed || "husky"
+      //   breed:Str                             # defaults to ''; short for breed:Str set breed
+
+      // prop setter definitions MUST provide a non-null return type to the
+      // right of the colon
+      const rightToken = tokens[index + 1];
+      if (_.isUndefined(rightToken))      return false;
+      if (rightToken.type !== 'word')     return false;
+
+      // the return type must be DIRECTLY after the colon (in hashes there MUST
+      // be a space after the colon, to differentiate them from return types)
+      const spacesAfterColon = rightToken.column - token.column - 1;
+      return spacesAfterColon === 0;
+    });
+  }
+
+  boundsOfFirstFunctionDefinitionInTokens(tokens) {
+    const colonIndex = this.indexOfFirstFunctionColon(tokens);
+    if (colonIndex < 0) return [];
+
+    const colonToken        = tokens[colonIndex];
+    const tokensBeforeColon = _.first(tokens, colonIndex);
+    const functionIsRegular = _.last(tokensBeforeColon).name === 'closeParen';
+    const argGroupOpenIndex = _.findLastIndex(tokensBeforeColon, (token, index) => {
+      if (!functionIsRegular)         return true;
+      if (token.name !== 'openParen') return false;
+
+      const currentTokens = tokensBeforeColon.slice(index, colonIndex);
+      return this.hasBalancedGrouping(currentTokens);
+    });
+
+    const tokensBeforeArgs     = _.first(tokensBeforeColon, argGroupOpenIndex);
+    const tokenRightBeforeArgs = _.last(tokensBeforeArgs);
+    const functionIsAnonymous  = _.isUndefined(tokenRightBeforeArgs) || tokenRightBeforeArgs.name !== 'identifier';
+
+    if (functionIsAnonymous && !functionIsRegular) {
+      const position   = `L${colonToken.line}/C${colonToken.column}`;
+      throw `Prop setter functions cannot be anonymous; error at ${position}`;
+    }
+
+    if (functionIsAnonymous && tokenRightBeforeArgs && tokenRightBeforeArgs.name === 'def') {
+      const position   = `L${colonToken.line}/C${colonToken.column}`;
+      throw `Function declarations must be named; error at ${position}`;
+    }
+
+    const nameIndex     = argGroupOpenIndex - 1;
+    const defIndex      = argGroupOpenIndex - 2;
+    const defToken      = tokens[defIndex];
+    const isDeclaration = defToken && defToken.name === 'def';
+
+    const startIndex    = functionIsAnonymous ? argGroupOpenIndex : isDeclaration ? defIndex : nameIndex;
+    const endIndex      = _.findIndex(tokens, (currentToken, index) => {
+      if (index <= colonIndex)                      return false;
+
+      const nextToken = tokens[index + 1];
+      if (_.isUndefined(nextToken))                 return true;
+      if (nextToken.line === currentToken.line)     return false;
+
+      const currentTokens = _.first(tokens, index + 1);
+      if (!this.hasBalancedGrouping(currentTokens)) return false;
+      if (nextToken.indent > colonToken.indent)     return false;
+
+      return true;
+    });
+
+    if (endIndex < 0) {
+      const startToken = tokens[startIndex];
+      const position   = `L${startToken.line}/C${startToken.column}`;
+      throw `Could not close function starting at ${position}`;
+    }
+
+    return [startIndex, endIndex];
+  }
+
+  boundsOfAllFunctionDefinitionsInTokens(tokens, boundsPairs = []) {
+    if (_.isEmpty(tokens)) return boundsPairs;
+
+    const boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(tokens);
+    if (_.isEmpty(boundsOfFirstFn)) return boundsPairs;
+
+    boundsPairs.push(boundsOfFirstFn);
+    const closeIndex   = boundsOfFirstFn[1];
+    const restOfTokens = tokens.slice(closeIndex + 1);
+    return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
   }
 
   indexOfBinaryOperation(operationName, tokens, { validLeftTypes, validRightTypes }) {
     const operatorNames = {
       assignment:             ['equals'],
+      sequence:               ['comma'],
       logicalOR:              ['or'],
       logicalAND:             ['and'],
       equalityComparison:     ['equalTo', 'notEqualTo'],
@@ -120,27 +229,35 @@ export default class Syntaxer {
     if (_.isEmpty(operatorNames)) throw `Invalid operation type '${operationName}'`;
 
     const groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
+    const fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
     const groupsArePresent = !_.isEmpty(groupBoundsPairs);
+    const fnDefsArePresent = !_.isEmpty(fnDefBoundsPairs);
 
     return _.findIndex(tokens, (token, index) => {
+      if (!_.contains(operatorNames, token.name)) return false;
+
       const isInsideGroup = groupsArePresent && _.any(groupBoundsPairs, (bounds) => {
         return index > bounds[0] && index < bounds[1];
       });
+      if (isInsideGroup)                          return false;
 
-      if (isInsideGroup || !_.contains(operatorNames, token.name)) return false;
+      const isInsideFunctionDefinition = fnDefsArePresent && _.any(fnDefBoundsPairs, (bounds) => {
+        return index > bounds[0] && index < bounds[1];
+      });
+      if (isInsideFunctionDefinition)             return false;
 
       const leftToken = tokens[index - 1];
-      if (_.isUndefined(leftToken)) return false;
+      if (_.isUndefined(leftToken))               return false;
 
       const rightToken = tokens[index + 1];
-      if (_.isUndefined(rightToken)) return false;
+      if (_.isUndefined(rightToken))              return false;
 
       const leftIsValid = (
         _.contains(validLeftTypes, leftToken.type) ||
         leftToken.name === 'identifier'            ||
         this.isCloseGroupToken(leftToken)
       );
-      if (!leftIsValid) return false;
+      if (!leftIsValid)                           return false;
 
       const rightIsValid = (
         _.contains(validRightTypes, rightToken.type) ||
@@ -161,6 +278,12 @@ export default class Syntaxer {
     const validLeftTypes  = ['word'];
     const validRightTypes = ['word', 'number', 'string', 'operator'];
     return this.indexOfBinaryOperation('assignment', tokens, { validLeftTypes, validRightTypes });
+  }
+
+  indexOfSequence(tokens) {
+    const validLeftTypes  = ['word', 'string', 'number'];
+    const validRightTypes = ['word', 'string', 'number', 'operator'];
+    return this.indexOfBinaryOperation('sequence', tokens, { validLeftTypes, validRightTypes });
   }
 
   indexOfLogicalOR(tokens) {
@@ -218,16 +341,29 @@ export default class Syntaxer {
   firstStatementFromTokens(tokens) {
     if (_.isEmpty(tokens)) return [];
 
+    const groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
+    const fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
+    const groupsArePresent = !_.isEmpty(groupBoundsPairs);
+    const fnDefsArePresent = !_.isEmpty(fnDefBoundsPairs);
+
     const statementEndPos = _.findIndex(tokens, (currentToken, index) => {
       const nextToken = tokens[index + 1];
-      if (_.isUndefined(nextToken)) return true;
+      if (_.isUndefined(nextToken))             return true;
 
-      if (nextToken.line !== currentToken.line) {
-        const currentTokens = _.first(tokens, index + 1);
-        return this.hasBalancedGrouping(currentTokens);
-      }
+      const isInsideGroup = groupsArePresent && _.any(groupBoundsPairs, (bounds) => {
+        return index > bounds[0] && index < bounds[1];
+      });
+      if (isInsideGroup)                        return false;
 
-      return false;
+      const isInsideFunctionDefinition = fnDefsArePresent && _.any(fnDefBoundsPairs, (bounds) => {
+        return index > bounds[0] && index < bounds[1];
+      });
+      if (isInsideFunctionDefinition)           return false;
+
+      if (nextToken.line === currentToken.line) return false;
+
+      const currentTokens = _.first(tokens, index + 1);
+      return this.hasBalancedGrouping(currentTokens);
     });
 
     return _.first(tokens, statementEndPos + 1);
@@ -309,6 +445,33 @@ export default class Syntaxer {
     };
   }
 
+  sequenceNode(firstCommaIndex, tokens) {
+    const firstComma = tokens[firstCommaIndex];
+    if (firstComma.name !== 'comma') {
+      const position = `L${firstComma.line}/C${firstComma.column}`;
+      throw `Expected to find comma at ${position}`;
+    }
+
+    const sequenceSets = _.reduce(tokens, (sets, token) => {
+      if (token.name === 'comma') {
+        sets.push([]);
+      } else {
+        _.last(sets).push(token);
+      }
+
+      return sets;
+    }, [[]]);
+
+    const sequenceNodes = _.map(sequenceSets, set => this.pemdasTreeFromStatement(set));
+
+    return {
+      operation:     'sequence',
+      startToken:    _.first(tokens),
+      endToken:      _.last(tokens),
+      sequenceNodes: sequenceNodes,
+    };
+  }
+
   groupNode(operationName, tokens) {
     const correctOpenTokenName = {
       parenGroup:   'openParen',
@@ -340,6 +503,51 @@ export default class Syntaxer {
     };
   }
 
+  functionDefinitionNode(boundsOfDef, tokens) {
+    const firstToken  = tokens[0];
+    const secondToken = tokens[1];
+
+    if (boundsOfDef[0] !== 0) {
+      const position = `L${firstToken.line}/C${firstToken.column}`;
+      throw `Expected function definition at ${position}`;
+    }
+
+    const colonIndex          = this.indexOfFirstFunctionColon(tokens);
+    const colonToken          = tokens[colonIndex];
+    const twoTokensToTheLeft  = tokens[colonIndex - 2];
+    const oneTokenToTheLeft   = tokens[colonIndex - 1];
+    const oneTokenToTheRight  = tokens[colonIndex + 1];
+    const twoTokensToTheRight = tokens[colonIndex + 2];
+
+    const hasArguments  = oneTokenToTheLeft.name === 'closeParen';
+    const isPropSetter  = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name === 'set';
+    const isPropDefault = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name !== 'set';
+    const isDeclaration = firstToken.name        === 'def';
+    const isAnonymous   = firstToken.name        === 'openParen';
+
+    const spacesAfterColon = oneTokenToTheRight ? oneTokenToTheRight.column - colonToken.column - 1 : 999;
+    const isTyped          = oneTokenToTheRight.type === 'word' && spacesAfterColon === 0;
+    const typeToken        = isTyped ? oneTokenToTheRight : null;
+    const nameToken        = isDeclaration ? secondToken : isPropSetter ? firstToken : null;
+
+    const boundsOfArgs    = hasArguments ? this.boundsOfFirstGroupInTokens(tokens) : [];
+    const argumentsTokens = _.isEmpty(boundsOfArgs) ? [] : tokens.slice(boundsOfArgs[0] + 1, boundsOfArgs[1]);
+
+    const blockStartIndex = colonIndex + _.filter([isTyped, isPropSetter]).length + 1;
+    const blockTokens     = tokens.slice(blockStartIndex);
+
+    return {
+      operationName: 'functionDefinition',
+      isDeclaration,
+      isPropSetter,
+      isPropDefault,
+      nameToken,
+      typeToken,
+      argumentsNode: this.pemdasTreeFromStatement(argumentsTokens),
+      blockNodes:    this.traverse(blockTokens),
+    };
+  }
+
   pemdasTreeFromStatement(statementTokens) {
     if (_.isEmpty(statementTokens)) {
       return null;
@@ -347,6 +555,11 @@ export default class Syntaxer {
 
     if (statementTokens.length === 1) {
       return this.identityNode(statementTokens[0]);
+    }
+
+    const indexOfSequence = this.indexOfSequence(statementTokens);
+    if (indexOfSequence !== -1) {
+      return this.sequenceNode(indexOfSequence, statementTokens);
     }
 
     const indexOfAssignment = this.indexOfAssignment(statementTokens);
@@ -411,6 +624,11 @@ export default class Syntaxer {
 
     if (firstToken.name === 'not') {
       return this.unaryOperationNode('inversion', statementTokens);
+    }
+
+    const boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(statementTokens);
+    if (boundsOfFirstFn[0] === 0) {
+      return this.functionDefinitionNode(boundsOfFirstFn, statementTokens);
     }
 
     if (this.isOpenGroupToken(firstToken)) {
