@@ -1559,27 +1559,44 @@ var _lexer = require('./lexer.js');
 
 var _lexer2 = _interopRequireDefault(_lexer);
 
+var _syntaxer = require('./syntaxer.js');
+
+var _syntaxer2 = _interopRequireDefault(_syntaxer);
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 // for testing it out in chrome/dev tools... don't judge
 window.addEventListener('load', function () {
+  window._ = _underscore2.default;
   window.Lexer = _lexer2.default;
+  window.Syntaxer = _syntaxer2.default;
   window.fileText = "foo = 'me \"says\":'\ndef bar(baz):Str\n  abc = 'hi, how\\'s it going?'\n  return baz + abc\n\n# this is just a comment\nbar(foo)";
   window.lex = new _lexer2.default({ fileText: window.fileText });
-  window._ = _underscore2.default;
 
-  var xhr = new XMLHttpRequest();
-  xhr.open('GET', '/brainstorm.stone');
-  xhr.onreadystatechange = function (event) {
+  var brainstormXHR = new XMLHttpRequest();
+  brainstormXHR.open('GET', '/brainstorm.stone');
+  brainstormXHR.onreadystatechange = function (event) {
     if (event.target.readyState === 4) {
       window.stoneFileText = event.target.responseText;
       window.stoneLex = new _lexer2.default({ fileText: window.stoneFileText });
+      window.stoneSyn = new _syntaxer2.default({ tokenList: window.stoneLex.traverse() });
     }
   };
-  xhr.send();
+  brainstormXHR.send();
+
+  var simpleTestXHR = new XMLHttpRequest();
+  simpleTestXHR.open('GET', '/test.stone');
+  simpleTestXHR.onreadystatechange = function (event) {
+    if (event.target.readyState === 4) {
+      window.simpleTestText = event.target.responseText;
+      window.simpleTestLex = new _lexer2.default({ fileText: window.simpleTestText });
+      window.simpleTestSyn = new _syntaxer2.default({ tokenList: window.simpleTestLex.traverse() });
+    }
+  };
+  simpleTestXHR.send();
 });
 
-},{"./lexer.js":3,"underscore":1}],3:[function(require,module,exports){
+},{"./lexer.js":3,"./syntaxer.js":4,"underscore":1}],3:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -1623,11 +1640,9 @@ var TOKEN = {
 
       // logical flow
       else: 'else',
-      for: 'for',
       if: 'if',
       raise: 'raise',
       return: 'return',
-      while: 'while',
 
       // declaration
       extends: 'extends',
@@ -1653,7 +1668,7 @@ var TOKEN = {
       '-': 'minus',
       '+': 'plus',
       '*': 'star',
-      '**': 'doubleStar',
+      '**': 'starStar',
 
       // comparison
       '==': 'equalTo',
@@ -1876,5 +1891,313 @@ var Lexer = function () {
 }();
 
 exports.default = Lexer;
+
+},{"underscore":1}],4:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _underscore = require('underscore');
+
+var _underscore2 = _interopRequireDefault(_underscore);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+// Options:
+//
+// 1) create a list of trees which comprise all of the logic in the file,
+//    then once that list is finished, turn it over to another cog in the
+//    compiler to do more transformations (AST/intermediate/JS/whatever)
+//
+// 2) build trees one by one; when one is finished, instantly turn that
+//    into... javascript? another intermediate? evaluate it? (this option
+//    being lazy computation so it's not huge memory [side note: is this
+//    _actually_ big on memory? or do I just think an obj/array of objs
+//    is that large?])
+//
+// With #2, might have to run through and do the function definitions
+// first (because they'd be hoisted).
+//
+// I'll go with #1 for now.
+
+
+// We'll start with operators...
+// - need to determine whether it's a binary or unary operator
+// - then for binary, it becomes:
+// createNodeFn(operatorToken);
+// //=> leftToken  == (value) group, identifier, literal, called function
+// //=> rightToken == (value) group, identifier, literal, called function
+// //=> {
+//   action: "operatorName",
+//   left:   createNodeFn(leftToken),
+//   right:  createNodeFn(rightToken),
+// }
+
+// OPERATIONAL_
+
+// Operational Rules
+//
+// Order:
+// 1) find the first block of code; a block of code being...
+//  - full lines at the current indentation level, contiguously (or, when not
+//    contiguous, separated only by newlines)
+//  - (fill in rest of rules later)
+// 2) extract first expression from the block of code, an expression being...
+//  - eh, fill this in as you figure it out
+
+// ACTIONS = {
+//   operator: {
+//     equals: (tokenIndex, tokens) => {
+//       const leftToken  = tokens[tokenIndex - 1];
+//       const rightToken = tokens[tokenIndex + 1];
+//       return {
+//         action: 'assignment',
+//         leftToken: leftToken,
+//         rightToken: rightToken, // this isn't right...
+//       };
+//     },
+//   },
+// };
+
+// PRECEDENCE: [
+//   'plus',
+//   'equals',
+// ];
+
+var VALIDATE = {
+  errorFor: function errorFor(operationName, lineNum, colNum) {
+    return function () {
+      throw 'Invalid ' + operationName + ' at L' + lineNum + '/C' + colNum;
+    };
+  },
+  assignment: function assignment(token, leftToken, rightToken) {
+    var throwError = this.errorFor('assignment', token.line, token.column);
+
+    if (token.name !== 'equals') throwError();
+    if (leftToken.name !== 'identifier') throwError();
+
+    var validRightTokenNames = ['identifier', 'literal', 'if', 'false', 'minus', // need to define unary operators someplace
+    'not', 'null', 'this', 'true', 'super', 'openBrace', 'openBracket', 'openParen', 'Boolean', 'Null', 'Number', 'Object', 'String'];
+
+    if (!_underscore2.default.contains(validRightTokenNames, rightToken.name)) throwError();
+  },
+  addition: function addition(token, leftToken, rightToken) {
+    var throwError = this.errorFor('addition', token.line, token.column);
+
+    if (token.name !== 'plus') throwError();
+
+    var validLeftTokenNames = ['identifier', 'literal', 'closeBrace', 'closeBracket', 'closeParen'];
+
+    var validRightTokenNames = ['identifier', 'literal', 'minus', // unary
+    'plus', // unary
+    'openBrace', 'openBracket', 'openParen'];
+
+    if (!_underscore2.default.contains(validLeftTokenNames, leftToken.name)) throwError();
+    if (!_underscore2.default.contains(validRightTokenNames, rightToken.name)) throwError();
+  }
+};
+
+var NODE = {
+  new: function _new(operation, token, leftNode, rightNode) {
+    return { operation: operation, token: token, leftNode: leftNode, rightNode: rightNode };
+  },
+  identity: function identity(token) {
+    return this.new('identity', token, null, null);
+  },
+
+
+  // unary operations
+
+  unaryPlus: function unaryPlus(token, rightNode) {
+    return this.new('substantiation', token, null, rightNode);
+  },
+  unaryMinus: function unaryMinus(token, rightNode) {
+    return this.new('negation', token, null, rightNode);
+  },
+
+
+  // binary operations
+
+  assignment: function assignment(token, leftNode, rightNode) {
+    return this.new('assignment', token, leftNode, rightNode);
+  },
+  addition: function addition(token, leftNode, rightNode) {
+    return this.new('addition', token, leftNode, rightNode);
+  },
+  subtraction: function subtraction(token, leftNode, rightNode) {
+    return this.new('subtraction', token, leftNode, rightNode);
+  },
+  multiplication: function multiplication(token, leftNode, rightNode) {
+    return this.new('multiplication', token, leftNode, rightNode);
+  },
+  division: function division(token, leftNode, rightNode) {
+    return this.new('division', token, leftNode, rightNode);
+  },
+  exponent: function exponent(token, leftNode, rightNode) {
+    return this.new('exponent', token, leftNode, rightNode);
+  },
+  modulo: function modulo(token, leftNode, rightNode) {
+    return this.new('modulo', token, leftNode, rightNode);
+  },
+  dispatch: function dispatch(token, leftNode, rightNode) {
+    return this.new('dispatch', token, leftNode, rightNode);
+  },
+  comparison: function comparison(token, leftNode, rightNode) {
+    return this.new('comparison', token, leftNode, rightNode);
+  },
+  and: function and(token, leftNode, rightNode) {
+    return this.new('and', token, leftNode, rightNode);
+  },
+  or: function or(token, leftNode, rightNode) {
+    return this.new('or', token, leftNode, rightNode);
+  }
+};
+
+var Syntaxer = function () {
+  function Syntaxer(options) {
+    _classCallCheck(this, Syntaxer);
+
+    this.tokenList = options.tokenList;
+    this.syntaxTree = {};
+    this.currentLineNum = 0;
+    this.currentColNum = 0;
+  }
+
+  _createClass(Syntaxer, [{
+    key: 'currentLine',
+    value: function currentLine() {
+      return _underscore2.default.where(this.tokenList, { line: this.currentLineNum });
+    }
+  }, {
+    key: 'nodeFromTokens',
+    value: function nodeFromTokens() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokenList;
+
+      if (tokens.length === 0) return null;
+      if (tokens.length === 1) return NODE.identity(tokens[0]);
+
+      var firstToken = tokens[0];
+
+      // if the first token is a unary operator...
+      if (firstToken.type === 'operator') {
+        var _restOfTokens = tokens.slice(1);
+        switch (firstToken.name) {
+          case 'minus':
+            return NODE.unaryMinus(firstToken, this.nodeFromTokens(_restOfTokens));
+          case 'plus':
+            return NODE.unaryPlus(firstToken, this.nodeFromTokens(_restOfTokens));
+          case 'not':
+            return NODE.unaryNot(firstToken, this.nodeFromTokens(_restOfTokens));
+          default:
+            debugger;
+        }
+      }
+
+      // if the first token is an open grouping symbol...
+      if (firstToken.type === 'grouping') {
+        var _restOfTokens2 = tokens.slice(1);
+        switch (firstToken.name) {
+          // case 'openBrace':   return NODE.object(firstToken, this.nodeFromTokens(restOfTokens));
+          // case 'openBracket': return NODE.array(firstToken,  this.nodeFromTokens(restOfTokens));
+          case 'openParen':
+            return NODE.openParen(firstToken, this.nodeFromTokens(_restOfTokens2));
+          default:
+            debugger;
+        }
+      }
+
+      // // if the first token is a key word with unary declarative meaning...
+      // if (firstToken.type === 'word' && firstToken.name !== 'identifier') {
+      //   const restOfTokens = tokens.slice(1);
+      //   switch (firstToken.name) {
+      //     case 'def':   return NODE.functionDef(firstToken, this.nodeFromTokens(restOfTokens));
+      //     case 'proto': return NODE.protoDef(firstToken,    this.nodeFromTokens(restOfTokens));
+      //     case 'set':   return NODE.propSet(firstToken,     this.nodeFromTokens(restOfTokens));
+      //     default: break;
+      //   }
+      // }
+
+      var secondToken = tokens[1];
+      var restOfTokens = tokens.slice(2);
+      var leftNode = NODE.identity(firstToken);
+
+      // if the second token is a binary operator...
+      if (secondToken.type === 'operator') {
+        var builderFn = void 0;
+
+        switch (secondToken.name) {
+          // math
+          case 'equals':
+            builderFn = NODE.assignment;break;
+          case 'plus':
+            builderFn = NODE.addition;break;
+          case 'minus':
+            builderFn = NODE.subtraction;break;
+          case 'star':
+            builderFn = NODE.multiplication;break;
+          case 'slash':
+            builderFn = NODE.division;break;
+          case 'starStar':
+            builderFn = NODE.exponent;break;
+          case 'modulo':
+            builderFn = NODE.modulo;break;
+
+          // dispatch
+          case 'dot':
+            builderFn = NODE.dispatch;break;
+
+          // comparison
+          case 'equalTo':
+          case 'notEqualTo':
+          case 'greaterThan':
+          case 'greaterThanOrEqualTo':
+          case 'lessThan':
+          case 'lessThanOrEqualTo':
+            builderFn = NODE.comparison;break;
+
+          // boolean
+          case 'and':
+            builderFn = NODE.and;break;
+          case 'or':
+            builderFn = NODE.or;break;
+
+          default:
+            debugger;
+        }
+
+        return builderFn.call(NODE, secondToken, leftNode, this.nodeFromTokens(restOfTokens));
+      }
+
+      debugger;
+    }
+  }, {
+    key: 'newNode',
+    value: function newNode(nodeType, leftNode, rightNode) {
+      return {
+        type: nodeType,
+        left: leftNode,
+        right: rightNode
+      };
+    }
+  }, {
+    key: 'traverse',
+    value: function traverse(currentNode) {
+      // const currentToken = this.tokenList[currentTokenIndex];
+      // this.actionForToken(currentToken)
+
+      var currentTokenIndex = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+    }
+  }]);
+
+  return Syntaxer;
+}();
+
+exports.default = Syntaxer;
 
 },{"underscore":1}]},{},[2]);

@@ -39,11 +39,9 @@ const TOKEN = {
 
       // logical flow
       else:   'else',
-      for:    'for',
       if:     'if',
       raise:  'raise',
       return: 'return',
-      while:  'while',
 
       // declaration
       extends: 'extends',
@@ -69,7 +67,7 @@ const TOKEN = {
       '-':  'minus',
       '+':  'plus',
       '*':  'star',
-      '**': 'doubleStar',
+      '**': 'starStar',
 
       // comparison
       '==': 'equalTo',
