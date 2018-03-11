@@ -1,6 +1,6 @@
 import _ from 'underscore';
 
-class Syntaxer {
+export default class Syntaxer {
   constructor(options) {
     this.tokenList = options.tokenList;
   }
@@ -56,6 +56,41 @@ class Syntaxer {
     return _.isEmpty(openStack);
   }
 
+  // Given a set of tokens, returns the indices of the first open grouping symbol and its
+  // matching closing symbol... essentially the beginning and end of the first group. Returns
+  // an array: [] if there are no groups, or [openSymbolIndex, closeSymbolIndex] otherwise.
+  // It will throw an error if there is no matching closing symbol for an open group.
+  boundsOfFirstGroupInTokens(tokens) {
+    const openIndex = _.findIndex(tokens, token => this.isOpenGroupToken(token));
+    if (openIndex < 0) return [];
+
+    const openStack = [];
+    const closeIndex = _.findIndex(tokens.slice(openIndex), (token) => {
+      if (token.type !== 'grouping') return false;
+
+      if (this.isOpenGroupToken(token)) {
+        openStack.push(token);
+        return false;
+      }
+
+      if (this.openTokenMatchesCloser(_.last(openStack), token)) {
+        openStack.pop();
+        return _.isEmpty(openStack);
+      }
+
+      const position = `L${token.line}/C${token.column}`;
+      throw `Unmatched ${token.name} at ${position}`;
+    });
+
+    if (closeIndex < 0) {
+      const openToken = tokens[openIndex];
+      const position  = `L${token.line}/C${token.column}`;
+      throw `Unmatched ${openToken.name} at ${position}`;
+    }
+
+    return [openIndex, closeIndex];
+  }
+
   boundsOfAllGroupsInTokens(tokens, boundsPairs = []) {
     if (_.isEmpty(tokens)) return boundsPairs;
 
@@ -63,9 +98,9 @@ class Syntaxer {
     if (_.isEmpty(boundsOfFirstGroup)) return boundsPairs;
 
     boundsPairs.push(boundsOfFirstGroup);
-    const closeIndex   = _.last(boundsOfFirstGroup);
-    const restOfTokens = _.rest(tokens, closeIndex + 1);
-    return this.boundsOfAllGroupsInTokens(tokens, boundsPairs)
+    const closeIndex   = boundsOfFirstGroup[1];
+    const restOfTokens = tokens.slice(closeIndex + 1);
+    return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs)
   }
 
   indexOfBinaryOperation(operationName, tokens, { validLeftTypes, validRightTypes }) {
@@ -119,7 +154,7 @@ class Syntaxer {
   indexOfComparisonOperation(operationName, tokens) {
     const validLeftTypes  = ['word', 'string', 'number'];
     const validRightTypes = ['word', 'string', 'number', 'operator'];
-    return this.indexOfBinaryOperation(operatorName, tokens, { validLeftTypes, validRightTypes });
+    return this.indexOfBinaryOperation(operationName, tokens, { validLeftTypes, validRightTypes });
   }
 
   indexOfAssignment(tokens) {
@@ -174,41 +209,6 @@ class Syntaxer {
     return this.indexOfBinaryOperation('exponentiation', tokens, { validLeftTypes, validRightTypes });
   }
 
-  // Given a set of tokens, returns the indices of the first open grouping symbol and its
-  // matching closing symbol... essentially the beginning and end of the first group. Returns
-  // an array: [] if there are no groups, or [openSymbolIndex, closeSymbolIndex] otherwise.
-  // It will throw an error if there is no matching closing symbol for an open group.
-  boundsOfFirstGroupInTokens(tokens) {
-    const openIndex = _.findIndex(tokens, token => this.isOpenGroupToken(token));
-    if (openIndex < 0) return [];
-
-    const openStack = [];
-    const closeIndex = _.findIndex(tokens.slice(openIndex), (token) => {
-      if (token.type !== 'grouping') return false;
-
-      if (this.isOpenGroupToken(token)) {
-        openStack.push(token);
-        return false;
-      }
-
-      if (this.openTokenMatchesCloser(_.last(openStack), token)) {
-        openStack.pop();
-        return _.isEmpty(openStack);
-      }
-
-      const position = `L${token.line}/C${token.column}`;
-      throw `Unmatched ${token.name} at ${position}`;
-    });
-
-    if (closeIndex < 0) {
-      const openToken = tokens[openIndex];
-      const position  = `L${token.line}/C${token.column}`;
-      throw `Unmatched ${openToken.name} at ${position}`;
-    }
-
-    return [openIndex, closeIndex];
-  }
-
   // Given a set of tokens, returns the tokens up to the end of the first line (or spanning
   // multiple lines if there are grouping symbols), to the end of the contiguous "statement".
   // Does not include the block of a function/proto definition, etc., as blocks are multiple
@@ -233,18 +233,32 @@ class Syntaxer {
     return _.first(tokens, statementEndPos + 1);
   }
 
+  identityNode(token) {
+    const validIdentityTypes = ['word', 'string', 'number'];
+    if (!_.contains(validIdentityTypes, token.type)) {
+      const position = `L${token.line}/C${token.column}`;
+      throw `Expected to find valid identity token at ${position}`;
+    }
+
+    return {
+      operation: 'identity',
+      token:     token,
+    };
+  }
+
   unaryOperationNode(operationName, tokens) {
     const operatorToken = _.first(tokens);
     const rightTokens   = _.rest(tokens);
 
-    if (!_.contains(['plus', 'minus', 'not'], operatorToken.name)) {
+    const validUnaryOperatorNames = ['plus', 'minus', 'not'];
+    if (!_.contains(validUnaryOperatorNames, operatorToken.name)) {
       const position = `L${operatorToken.line}/C${operatorToken.column}`;
       throw `Expected to find ${operationName} at ${position}`;
     }
 
     return {
       operation: operationName,
-      token:     token,
+      token:     operatorToken,
       rightNode: this.pemdasTreeFromStatement(rightTokens),
     };
   }
@@ -329,6 +343,10 @@ class Syntaxer {
   pemdasTreeFromStatement(statementTokens) {
     if (_.isEmpty(statementTokens)) {
       return null;
+    }
+
+    if (statementTokens.length === 1) {
+      return this.identityNode(statementTokens[0]);
     }
 
     const indexOfAssignment = this.indexOfAssignment(statementTokens);

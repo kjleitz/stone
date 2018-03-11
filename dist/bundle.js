@@ -1895,6 +1895,10 @@ exports.default = Lexer;
 },{"underscore":1}],4:[function(require,module,exports){
 'use strict';
 
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
 var _underscore = require('underscore');
@@ -1975,6 +1979,48 @@ var Syntaxer = function () {
 
       return _underscore2.default.isEmpty(openStack);
     }
+
+    // Given a set of tokens, returns the indices of the first open grouping symbol and its
+    // matching closing symbol... essentially the beginning and end of the first group. Returns
+    // an array: [] if there are no groups, or [openSymbolIndex, closeSymbolIndex] otherwise.
+    // It will throw an error if there is no matching closing symbol for an open group.
+
+  }, {
+    key: 'boundsOfFirstGroupInTokens',
+    value: function boundsOfFirstGroupInTokens(tokens) {
+      var _this2 = this;
+
+      var openIndex = _underscore2.default.findIndex(tokens, function (token) {
+        return _this2.isOpenGroupToken(token);
+      });
+      if (openIndex < 0) return [];
+
+      var openStack = [];
+      var closeIndex = _underscore2.default.findIndex(tokens.slice(openIndex), function (token) {
+        if (token.type !== 'grouping') return false;
+
+        if (_this2.isOpenGroupToken(token)) {
+          openStack.push(token);
+          return false;
+        }
+
+        if (_this2.openTokenMatchesCloser(_underscore2.default.last(openStack), token)) {
+          openStack.pop();
+          return _underscore2.default.isEmpty(openStack);
+        }
+
+        var position = 'L' + token.line + '/C' + token.column;
+        throw 'Unmatched ' + token.name + ' at ' + position;
+      });
+
+      if (closeIndex < 0) {
+        var openToken = tokens[openIndex];
+        var position = 'L' + token.line + '/C' + token.column;
+        throw 'Unmatched ' + openToken.name + ' at ' + position;
+      }
+
+      return [openIndex, closeIndex];
+    }
   }, {
     key: 'boundsOfAllGroupsInTokens',
     value: function boundsOfAllGroupsInTokens(tokens) {
@@ -1986,14 +2032,14 @@ var Syntaxer = function () {
       if (_underscore2.default.isEmpty(boundsOfFirstGroup)) return boundsPairs;
 
       boundsPairs.push(boundsOfFirstGroup);
-      var closeIndex = _underscore2.default.last(boundsOfFirstGroup);
-      var restOfTokens = _underscore2.default.rest(tokens, closeIndex + 1);
-      return this.boundsOfAllGroupsInTokens(tokens, boundsPairs);
+      var closeIndex = boundsOfFirstGroup[1];
+      var restOfTokens = tokens.slice(closeIndex + 1);
+      return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
     }
   }, {
     key: 'indexOfBinaryOperation',
     value: function indexOfBinaryOperation(operationName, tokens, _ref) {
-      var _this2 = this;
+      var _this3 = this;
 
       var validLeftTypes = _ref.validLeftTypes,
           validRightTypes = _ref.validRightTypes;
@@ -2029,10 +2075,10 @@ var Syntaxer = function () {
         var rightToken = tokens[index + 1];
         if (_underscore2.default.isUndefined(rightToken)) return false;
 
-        var leftIsValid = _underscore2.default.contains(validLeftTypes, leftToken.type) || leftToken.name === 'identifier' || _this2.isCloseGroupToken(leftToken);
+        var leftIsValid = _underscore2.default.contains(validLeftTypes, leftToken.type) || leftToken.name === 'identifier' || _this3.isCloseGroupToken(leftToken);
         if (!leftIsValid) return false;
 
-        var rightIsValid = _underscore2.default.contains(validRightTypes, rightToken.type) || rightToken.name === 'identifier' || _this2.isOpenGroupToken(rightToken);
+        var rightIsValid = _underscore2.default.contains(validRightTypes, rightToken.type) || rightToken.name === 'identifier' || _this3.isOpenGroupToken(rightToken);
         return leftIsValid && rightIsValid;
       });
     }
@@ -2041,7 +2087,7 @@ var Syntaxer = function () {
     value: function indexOfComparisonOperation(operationName, tokens) {
       var validLeftTypes = ['word', 'string', 'number'];
       var validRightTypes = ['word', 'string', 'number', 'operator'];
-      return this.indexOfBinaryOperation(operatorName, tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+      return this.indexOfBinaryOperation(operationName, tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
     key: 'indexOfAssignment',
@@ -2106,48 +2152,6 @@ var Syntaxer = function () {
       return this.indexOfBinaryOperation('exponentiation', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
 
-    // Given a set of tokens, returns the indices of the first open grouping symbol and its
-    // matching closing symbol... essentially the beginning and end of the first group. Returns
-    // an array: [] if there are no groups, or [openSymbolIndex, closeSymbolIndex] otherwise.
-    // It will throw an error if there is no matching closing symbol for an open group.
-
-  }, {
-    key: 'boundsOfFirstGroupInTokens',
-    value: function boundsOfFirstGroupInTokens(tokens) {
-      var _this3 = this;
-
-      var openIndex = _underscore2.default.findIndex(tokens, function (token) {
-        return _this3.isOpenGroupToken(token);
-      });
-      if (openIndex < 0) return [];
-
-      var openStack = [];
-      var closeIndex = _underscore2.default.findIndex(tokens.slice(openIndex), function (token) {
-        if (token.type !== 'grouping') return false;
-
-        if (_this3.isOpenGroupToken(token)) {
-          openStack.push(token);
-          return false;
-        }
-
-        if (_this3.openTokenMatchesCloser(_underscore2.default.last(openStack), token)) {
-          openStack.pop();
-          return _underscore2.default.isEmpty(openStack);
-        }
-
-        var position = 'L' + token.line + '/C' + token.column;
-        throw 'Unmatched ' + token.name + ' at ' + position;
-      });
-
-      if (closeIndex < 0) {
-        var openToken = tokens[openIndex];
-        var position = 'L' + token.line + '/C' + token.column;
-        throw 'Unmatched ' + openToken.name + ' at ' + position;
-      }
-
-      return [openIndex, closeIndex];
-    }
-
     // Given a set of tokens, returns the tokens up to the end of the first line (or spanning
     // multiple lines if there are grouping symbols), to the end of the contiguous "statement".
     // Does not include the block of a function/proto definition, etc., as blocks are multiple
@@ -2177,19 +2181,34 @@ var Syntaxer = function () {
       return _underscore2.default.first(tokens, statementEndPos + 1);
     }
   }, {
+    key: 'identityNode',
+    value: function identityNode(token) {
+      var validIdentityTypes = ['word', 'string', 'number'];
+      if (!_underscore2.default.contains(validIdentityTypes, token.type)) {
+        var position = 'L' + token.line + '/C' + token.column;
+        throw 'Expected to find valid identity token at ' + position;
+      }
+
+      return {
+        operation: 'identity',
+        token: token
+      };
+    }
+  }, {
     key: 'unaryOperationNode',
     value: function unaryOperationNode(operationName, tokens) {
       var operatorToken = _underscore2.default.first(tokens);
       var rightTokens = _underscore2.default.rest(tokens);
 
-      if (!_underscore2.default.contains(['plus', 'minus', 'not'], operatorToken.name)) {
+      var validUnaryOperatorNames = ['plus', 'minus', 'not'];
+      if (!_underscore2.default.contains(validUnaryOperatorNames, operatorToken.name)) {
         var position = 'L' + operatorToken.line + '/C' + operatorToken.column;
         throw 'Expected to find ' + operationName + ' at ' + position;
       }
 
       return {
         operation: operationName,
-        token: token,
+        token: operatorToken,
         rightNode: this.pemdasTreeFromStatement(rightTokens)
       };
     }
@@ -2267,6 +2286,10 @@ var Syntaxer = function () {
     value: function pemdasTreeFromStatement(statementTokens) {
       if (_underscore2.default.isEmpty(statementTokens)) {
         return null;
+      }
+
+      if (statementTokens.length === 1) {
+        return this.identityNode(statementTokens[0]);
       }
 
       var indexOfAssignment = this.indexOfAssignment(statementTokens);
@@ -2365,5 +2388,7 @@ var Syntaxer = function () {
 
   return Syntaxer;
 }();
+
+exports.default = Syntaxer;
 
 },{"underscore":1}]},{},[2]);
