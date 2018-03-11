@@ -1,6 +1,6 @@
 import _ from 'underscore';
 
-class Syntaxer4 {
+class Syntaxer {
   constructor(options) {
     this.tokenList = options.tokenList;
   }

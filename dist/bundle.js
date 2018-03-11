@@ -1895,10 +1895,6 @@ exports.default = Lexer;
 },{"underscore":1}],4:[function(require,module,exports){
 'use strict';
 
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
 var _underscore = require('underscore');
@@ -1909,295 +1905,465 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-// Options:
-//
-// 1) create a list of trees which comprise all of the logic in the file,
-//    then once that list is finished, turn it over to another cog in the
-//    compiler to do more transformations (AST/intermediate/JS/whatever)
-//
-// 2) build trees one by one; when one is finished, instantly turn that
-//    into... javascript? another intermediate? evaluate it? (this option
-//    being lazy computation so it's not huge memory [side note: is this
-//    _actually_ big on memory? or do I just think an obj/array of objs
-//    is that large?])
-//
-// With #2, might have to run through and do the function definitions
-// first (because they'd be hoisted).
-//
-// I'll go with #1 for now.
-
-
-// We'll start with operators...
-// - need to determine whether it's a binary or unary operator
-// - then for binary, it becomes:
-// createNodeFn(operatorToken);
-// //=> leftToken  == (value) group, identifier, literal, called function
-// //=> rightToken == (value) group, identifier, literal, called function
-// //=> {
-//   action: "operatorName",
-//   left:   createNodeFn(leftToken),
-//   right:  createNodeFn(rightToken),
-// }
-
-// OPERATIONAL_
-
-// Operational Rules
-//
-// Order:
-// 1) find the first block of code; a block of code being...
-//  - full lines at the current indentation level, contiguously (or, when not
-//    contiguous, separated only by newlines)
-//  - (fill in rest of rules later)
-// 2) extract first expression from the block of code, an expression being...
-//  - eh, fill this in as you figure it out
-
-// ACTIONS = {
-//   operator: {
-//     equals: (tokenIndex, tokens) => {
-//       const leftToken  = tokens[tokenIndex - 1];
-//       const rightToken = tokens[tokenIndex + 1];
-//       return {
-//         action: 'assignment',
-//         leftToken: leftToken,
-//         rightToken: rightToken, // this isn't right...
-//       };
-//     },
-//   },
-// };
-
-// PRECEDENCE: [
-//   'plus',
-//   'equals',
-// ];
-
-var VALIDATE = {
-  errorFor: function errorFor(operationName, lineNum, colNum) {
-    return function () {
-      throw 'Invalid ' + operationName + ' at L' + lineNum + '/C' + colNum;
-    };
-  },
-  assignment: function assignment(token, leftToken, rightToken) {
-    var throwError = this.errorFor('assignment', token.line, token.column);
-
-    if (token.name !== 'equals') throwError();
-    if (leftToken.name !== 'identifier') throwError();
-
-    var validRightTokenNames = ['identifier', 'literal', 'if', 'false', 'minus', // need to define unary operators someplace
-    'not', 'null', 'this', 'true', 'super', 'openBrace', 'openBracket', 'openParen', 'Boolean', 'Null', 'Number', 'Object', 'String'];
-
-    if (!_underscore2.default.contains(validRightTokenNames, rightToken.name)) throwError();
-  },
-  addition: function addition(token, leftToken, rightToken) {
-    var throwError = this.errorFor('addition', token.line, token.column);
-
-    if (token.name !== 'plus') throwError();
-
-    var validLeftTokenNames = ['identifier', 'literal', 'closeBrace', 'closeBracket', 'closeParen'];
-
-    var validRightTokenNames = ['identifier', 'literal', 'minus', // unary
-    'plus', // unary
-    'openBrace', 'openBracket', 'openParen'];
-
-    if (!_underscore2.default.contains(validLeftTokenNames, leftToken.name)) throwError();
-    if (!_underscore2.default.contains(validRightTokenNames, rightToken.name)) throwError();
-  }
-};
-
-var NODE = {
-  new: function _new(operation, token, leftNode, rightNode) {
-    return { operation: operation, token: token, leftNode: leftNode, rightNode: rightNode };
-  },
-  identity: function identity(token) {
-    return this.new('identity', token, null, null);
-  },
-
-
-  // unary operations
-
-  unaryPlus: function unaryPlus(token, rightNode) {
-    return this.new('substantiation', token, null, rightNode);
-  },
-  unaryMinus: function unaryMinus(token, rightNode) {
-    return this.new('negation', token, null, rightNode);
-  },
-
-
-  // binary operations
-
-  assignment: function assignment(token, leftNode, rightNode) {
-    return this.new('assignment', token, leftNode, rightNode);
-  },
-  addition: function addition(token, leftNode, rightNode) {
-    return this.new('addition', token, leftNode, rightNode);
-  },
-  subtraction: function subtraction(token, leftNode, rightNode) {
-    return this.new('subtraction', token, leftNode, rightNode);
-  },
-  multiplication: function multiplication(token, leftNode, rightNode) {
-    return this.new('multiplication', token, leftNode, rightNode);
-  },
-  division: function division(token, leftNode, rightNode) {
-    return this.new('division', token, leftNode, rightNode);
-  },
-  exponent: function exponent(token, leftNode, rightNode) {
-    return this.new('exponent', token, leftNode, rightNode);
-  },
-  modulo: function modulo(token, leftNode, rightNode) {
-    return this.new('modulo', token, leftNode, rightNode);
-  },
-  dispatch: function dispatch(token, leftNode, rightNode) {
-    return this.new('dispatch', token, leftNode, rightNode);
-  },
-  comparison: function comparison(token, leftNode, rightNode) {
-    return this.new('comparison', token, leftNode, rightNode);
-  },
-  and: function and(token, leftNode, rightNode) {
-    return this.new('and', token, leftNode, rightNode);
-  },
-  or: function or(token, leftNode, rightNode) {
-    return this.new('or', token, leftNode, rightNode);
-  }
-};
-
 var Syntaxer = function () {
   function Syntaxer(options) {
     _classCallCheck(this, Syntaxer);
 
     this.tokenList = options.tokenList;
-    this.syntaxTree = {};
-    this.currentLineNum = 0;
-    this.currentColNum = 0;
   }
 
   _createClass(Syntaxer, [{
-    key: 'currentLine',
-    value: function currentLine() {
-      return _underscore2.default.where(this.tokenList, { line: this.currentLineNum });
+    key: 'hasGroupingSymbols',
+    value: function hasGroupingSymbols(tokens) {
+      return _underscore2.default.any(tokens, function (token) {
+        return token.type === 'grouping';
+      });
     }
   }, {
-    key: 'nodeFromTokens',
-    value: function nodeFromTokens() {
-      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokenList;
-
-      if (tokens.length === 0) return null;
-      if (tokens.length === 1) return NODE.identity(tokens[0]);
-
-      var firstToken = tokens[0];
-
-      // if the first token is a unary operator...
-      if (firstToken.type === 'operator') {
-        var _restOfTokens = tokens.slice(1);
-        switch (firstToken.name) {
-          case 'minus':
-            return NODE.unaryMinus(firstToken, this.nodeFromTokens(_restOfTokens));
-          case 'plus':
-            return NODE.unaryPlus(firstToken, this.nodeFromTokens(_restOfTokens));
-          case 'not':
-            return NODE.unaryNot(firstToken, this.nodeFromTokens(_restOfTokens));
-          default:
-            debugger;
-        }
-      }
-
-      // if the first token is an open grouping symbol...
-      if (firstToken.type === 'grouping') {
-        var _restOfTokens2 = tokens.slice(1);
-        switch (firstToken.name) {
-          // case 'openBrace':   return NODE.object(firstToken, this.nodeFromTokens(restOfTokens));
-          // case 'openBracket': return NODE.array(firstToken,  this.nodeFromTokens(restOfTokens));
-          case 'openParen':
-            return NODE.openParen(firstToken, this.nodeFromTokens(_restOfTokens2));
-          default:
-            debugger;
-        }
-      }
-
-      // // if the first token is a key word with unary declarative meaning...
-      // if (firstToken.type === 'word' && firstToken.name !== 'identifier') {
-      //   const restOfTokens = tokens.slice(1);
-      //   switch (firstToken.name) {
-      //     case 'def':   return NODE.functionDef(firstToken, this.nodeFromTokens(restOfTokens));
-      //     case 'proto': return NODE.protoDef(firstToken,    this.nodeFromTokens(restOfTokens));
-      //     case 'set':   return NODE.propSet(firstToken,     this.nodeFromTokens(restOfTokens));
-      //     default: break;
-      //   }
-      // }
-
-      var secondToken = tokens[1];
-      var restOfTokens = tokens.slice(2);
-      var leftNode = NODE.identity(firstToken);
-
-      // if the second token is a binary operator...
-      if (secondToken.type === 'operator') {
-        var builderFn = void 0;
-
-        switch (secondToken.name) {
-          // math
-          case 'equals':
-            builderFn = NODE.assignment;break;
-          case 'plus':
-            builderFn = NODE.addition;break;
-          case 'minus':
-            builderFn = NODE.subtraction;break;
-          case 'star':
-            builderFn = NODE.multiplication;break;
-          case 'slash':
-            builderFn = NODE.division;break;
-          case 'starStar':
-            builderFn = NODE.exponent;break;
-          case 'modulo':
-            builderFn = NODE.modulo;break;
-
-          // dispatch
-          case 'dot':
-            builderFn = NODE.dispatch;break;
-
-          // comparison
-          case 'equalTo':
-          case 'notEqualTo':
-          case 'greaterThan':
-          case 'greaterThanOrEqualTo':
-          case 'lessThan':
-          case 'lessThanOrEqualTo':
-            builderFn = NODE.comparison;break;
-
-          // boolean
-          case 'and':
-            builderFn = NODE.and;break;
-          case 'or':
-            builderFn = NODE.or;break;
-
-          default:
-            debugger;
-        }
-
-        return builderFn.call(NODE, secondToken, leftNode, this.nodeFromTokens(restOfTokens));
-      }
-
-      debugger;
+    key: 'isGroup',
+    value: function isGroup(tokens) {
+      var openToken = _underscore2.default.first(tokens);
+      var closeToken = _underscore2.default.last(tokens);
+      return this.openTokenMatchesCloser(openToken, closeToken);
     }
   }, {
-    key: 'newNode',
-    value: function newNode(nodeType, leftNode, rightNode) {
+    key: 'isOpenGroupToken',
+    value: function isOpenGroupToken(token) {
+      if (token.type !== 'grouping') return false;
+      return _underscore2.default.contains(['openParen', 'openBracket', 'openBrace'], token.name);
+    }
+  }, {
+    key: 'isCloseGroupToken',
+    value: function isCloseGroupToken(token) {
+      if (token.type !== 'grouping') return false;
+      return _underscore2.default.contains(['openParen', 'openBracket', 'openBrace'], token.name);
+    }
+  }, {
+    key: 'openTokenMatchesCloser',
+    value: function openTokenMatchesCloser(openToken, closeToken) {
+      if (openToken.type !== 'grouping' || closeToken.type !== 'grouping') return false;
+      var validCloserFor = { '(': ')', '[': ']', '{': '}' };
+      var validOpeners = _underscore2.default.keys(validCloserFor);
+      var openerIsValid = _underscore2.default.contains(validOpeners, openToken.lexeme);
+      var closerIsValid = closeToken.lexeme === validCloserFor[openToken.lexeme];
+      return openerIsValid && closerIsValid;
+    }
+
+    // Given a set of tokens, returns true if the tokens follow valid grouping rules (all open
+    // grouping symbols are properly matched with closing symbols, or there are no groups), or
+    // false if a group is not closed properly. Throws an error for orphaned closing symbols.
+
+  }, {
+    key: 'hasBalancedGrouping',
+    value: function hasBalancedGrouping(tokens) {
+      var _this = this;
+
+      var openStack = [];
+      _underscore2.default.each(tokens, function (token) {
+        if (token.type !== 'grouping') return;
+
+        if (_this.isOpenGroupToken(token)) {
+          return openStack.push(token);
+        }
+
+        if (_this.openTokenMatchesCloser(_underscore2.default.last(openStack), token)) {
+          return openStack.pop();
+        }
+
+        throw 'Grouping mismatch at L' + token.line + '/C' + token.column;
+      });
+
+      return _underscore2.default.isEmpty(openStack);
+    }
+  }, {
+    key: 'boundsOfAllGroupsInTokens',
+    value: function boundsOfAllGroupsInTokens(tokens) {
+      var boundsPairs = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
+
+      if (_underscore2.default.isEmpty(tokens)) return boundsPairs;
+
+      var boundsOfFirstGroup = this.boundsOfFirstGroupInTokens(tokens);
+      if (_underscore2.default.isEmpty(boundsOfFirstGroup)) return boundsPairs;
+
+      boundsPairs.push(boundsOfFirstGroup);
+      var closeIndex = _underscore2.default.last(boundsOfFirstGroup);
+      var restOfTokens = _underscore2.default.rest(tokens, closeIndex + 1);
+      return this.boundsOfAllGroupsInTokens(tokens, boundsPairs);
+    }
+  }, {
+    key: 'indexOfBinaryOperation',
+    value: function indexOfBinaryOperation(operationName, tokens, _ref) {
+      var _this2 = this;
+
+      var validLeftTypes = _ref.validLeftTypes,
+          validRightTypes = _ref.validRightTypes;
+
+      var operatorNames = {
+        assignment: ['equals'],
+        logicalOR: ['or'],
+        logicalAND: ['and'],
+        equalityComparison: ['equalTo', 'notEqualTo'],
+        differentialComparison: ['greaterThan', 'greaterThanOrEqualTo', 'lessThan', 'lessThanOrEqualTo'],
+        subtraction: ['minus'],
+        addition: ['plus'],
+        division: ['slash'],
+        multiplication: ['star'],
+        exponentiation: ['starStar']
+      }[operationName];
+
+      if (_underscore2.default.isEmpty(operatorNames)) throw 'Invalid operation type \'' + operationName + '\'';
+
+      var groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
+      var groupsArePresent = !_underscore2.default.isEmpty(groupBoundsPairs);
+
+      return _underscore2.default.findIndex(tokens, function (token, index) {
+        var isInsideGroup = groupsArePresent && _underscore2.default.any(groupBoundsPairs, function (bounds) {
+          return index > bounds[0] && index < bounds[1];
+        });
+
+        if (isInsideGroup || !_underscore2.default.contains(operatorNames, token.name)) return false;
+
+        var leftToken = tokens[index - 1];
+        if (_underscore2.default.isUndefined(leftToken)) return false;
+
+        var rightToken = tokens[index + 1];
+        if (_underscore2.default.isUndefined(rightToken)) return false;
+
+        var leftIsValid = _underscore2.default.contains(validLeftTypes, leftToken.type) || leftToken.name === 'identifier' || _this2.isCloseGroupToken(leftToken);
+        if (!leftIsValid) return false;
+
+        var rightIsValid = _underscore2.default.contains(validRightTypes, rightToken.type) || rightToken.name === 'identifier' || _this2.isOpenGroupToken(rightToken);
+        return leftIsValid && rightIsValid;
+      });
+    }
+  }, {
+    key: 'indexOfComparisonOperation',
+    value: function indexOfComparisonOperation(operationName, tokens) {
+      var validLeftTypes = ['word', 'string', 'number'];
+      var validRightTypes = ['word', 'string', 'number', 'operator'];
+      return this.indexOfBinaryOperation(operatorName, tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
+  }, {
+    key: 'indexOfAssignment',
+    value: function indexOfAssignment(tokens) {
+      var validLeftTypes = ['word'];
+      var validRightTypes = ['word', 'number', 'string', 'operator'];
+      return this.indexOfBinaryOperation('assignment', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
+  }, {
+    key: 'indexOfLogicalOR',
+    value: function indexOfLogicalOR(tokens) {
+      return this.indexOfComparisonOperation('logicalOR', tokens);
+    }
+  }, {
+    key: 'indexOfLogicalAND',
+    value: function indexOfLogicalAND(tokens) {
+      return this.indexOfComparisonOperation('logicalAND', tokens);
+    }
+  }, {
+    key: 'indexOfEqualityComparison',
+    value: function indexOfEqualityComparison(tokens) {
+      return this.indexOfComparisonOperation('equalityComparison', tokens);
+    }
+  }, {
+    key: 'indexOfDifferentialComparison',
+    value: function indexOfDifferentialComparison(tokens) {
+      return this.indexOfComparisonOperation('differentialComparison', tokens);
+    }
+  }, {
+    key: 'indexOfSubtraction',
+    value: function indexOfSubtraction(tokens) {
+      var validLeftTypes = ['word', 'number', 'string'];
+      var validRightTypes = ['word', 'number', 'string', 'operator'];
+      return this.indexOfBinaryOperation('subtraction', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
+  }, {
+    key: 'indexOfAddition',
+    value: function indexOfAddition(tokens) {
+      var validLeftTypes = ['word', 'number', 'string'];
+      var validRightTypes = ['word', 'number', 'string', 'operator'];
+      return this.indexOfBinaryOperation('addition', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
+  }, {
+    key: 'indexOfDivision',
+    value: function indexOfDivision(tokens) {
+      var validLeftTypes = ['word', 'number'];
+      var validRightTypes = ['word', 'number', 'operator'];
+      return this.indexOfBinaryOperation('division', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
+  }, {
+    key: 'indexOfMultiplication',
+    value: function indexOfMultiplication(tokens) {
+      var validLeftTypes = ['word', 'number', 'string'];
+      var validRightTypes = ['word', 'number', 'operator'];
+      return this.indexOfBinaryOperation('multiplication', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
+  }, {
+    key: 'indexOfExponentiation',
+    value: function indexOfExponentiation(tokens) {
+      var validLeftTypes = ['word', 'number'];
+      var validRightTypes = ['word', 'number', 'operator'];
+      return this.indexOfBinaryOperation('exponentiation', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
+
+    // Given a set of tokens, returns the indices of the first open grouping symbol and its
+    // matching closing symbol... essentially the beginning and end of the first group. Returns
+    // an array: [] if there are no groups, or [openSymbolIndex, closeSymbolIndex] otherwise.
+    // It will throw an error if there is no matching closing symbol for an open group.
+
+  }, {
+    key: 'boundsOfFirstGroupInTokens',
+    value: function boundsOfFirstGroupInTokens(tokens) {
+      var _this3 = this;
+
+      var openIndex = _underscore2.default.findIndex(tokens, function (token) {
+        return _this3.isOpenGroupToken(token);
+      });
+      if (openIndex < 0) return [];
+
+      var openStack = [];
+      var closeIndex = _underscore2.default.findIndex(tokens.slice(openIndex), function (token) {
+        if (token.type !== 'grouping') return false;
+
+        if (_this3.isOpenGroupToken(token)) {
+          openStack.push(token);
+          return false;
+        }
+
+        if (_this3.openTokenMatchesCloser(_underscore2.default.last(openStack), token)) {
+          openStack.pop();
+          return _underscore2.default.isEmpty(openStack);
+        }
+
+        var position = 'L' + token.line + '/C' + token.column;
+        throw 'Unmatched ' + token.name + ' at ' + position;
+      });
+
+      if (closeIndex < 0) {
+        var openToken = tokens[openIndex];
+        var position = 'L' + token.line + '/C' + token.column;
+        throw 'Unmatched ' + openToken.name + ' at ' + position;
+      }
+
+      return [openIndex, closeIndex];
+    }
+
+    // Given a set of tokens, returns the tokens up to the end of the first line (or spanning
+    // multiple lines if there are grouping symbols), to the end of the contiguous "statement".
+    // Does not include the block of a function/proto definition, etc., as blocks are multiple
+    // statements, so I'm just gonna treat the definition statement as a single entity for now
+    // and validate/construct the definition block somewhere else.
+    // EDIT: ...SLASH TODO: CONSIDER SURROUNDING FUNCTION DEFS W/ CURLY BRACES MAYBE
+
+  }, {
+    key: 'firstStatementFromTokens',
+    value: function firstStatementFromTokens(tokens) {
+      var _this4 = this;
+
+      if (_underscore2.default.isEmpty(tokens)) return [];
+
+      var statementEndPos = _underscore2.default.findIndex(tokens, function (currentToken, index) {
+        var nextToken = tokens[index + 1];
+        if (_underscore2.default.isUndefined(nextToken)) return true;
+
+        if (nextToken.line !== currentToken.line) {
+          var currentTokens = _underscore2.default.first(tokens, index + 1);
+          return _this4.hasBalancedGrouping(currentTokens);
+        }
+
+        return false;
+      });
+
+      return _underscore2.default.first(tokens, statementEndPos + 1);
+    }
+  }, {
+    key: 'unaryOperationNode',
+    value: function unaryOperationNode(operationName, tokens) {
+      var operatorToken = _underscore2.default.first(tokens);
+      var rightTokens = _underscore2.default.rest(tokens);
+
+      if (!_underscore2.default.contains(['plus', 'minus', 'not'], operatorToken.name)) {
+        var position = 'L' + operatorToken.line + '/C' + operatorToken.column;
+        throw 'Expected to find ' + operationName + ' at ' + position;
+      }
+
       return {
-        type: nodeType,
-        left: leftNode,
-        right: rightNode
+        operation: operationName,
+        token: token,
+        rightNode: this.pemdasTreeFromStatement(rightTokens)
       };
     }
   }, {
-    key: 'traverse',
-    value: function traverse(currentNode) {
-      // const currentToken = this.tokenList[currentTokenIndex];
-      // this.actionForToken(currentToken)
+    key: 'binaryOperationNode',
+    value: function binaryOperationNode(operationName, operatorIndex, tokens) {
+      var tokenNames = {
+        subtraction: ['minus'],
+        addition: ['plus'],
+        division: ['slash'],
+        multiplication: ['star'],
+        exponentiation: ['starStar'],
+        assignment: ['equals'],
+        comparison: ['equalTo', 'greaterThan', 'greaterThanOrEqualTo', 'lessThan', 'lessThanOrEqualTo', 'notEqualTo'],
+        boolean: ['and', 'or']
+      }[operationName];
 
-      var currentTokenIndex = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+      var operatorToken = tokens[operatorIndex];
+      var operatorPos = 'L' + operatorToken.line + '/C' + operatorToken.column;
+      if (!_underscore2.default.contains(tokenNames, operatorToken.name)) {
+        throw 'Expected to find ' + operationName + ' at ' + operatorPos;
+      }
+
+      var leftTokens = _underscore2.default.first(tokens, operatorIndex);
+      if (_underscore2.default.isEmpty(leftTokens)) {
+        throw 'Found no left-hand-side for ' + operationName + ' at ' + operatorPos;
+      }
+
+      var rightTokens = tokens.slice(operatorIndex + 1);
+      if (_underscore2.default.isEmpty(rightTokens)) {
+        throw 'Found no right-hand-side for ' + operationName + ' at ' + operatorPos;
+      }
+
+      return {
+        operation: operationName,
+        token: operatorToken,
+        leftNode: this.pemdasTreeFromStatement(leftTokens),
+        rightNode: this.pemdasTreeFromStatement(rightTokens)
+      };
+    }
+  }, {
+    key: 'groupNode',
+    value: function groupNode(operationName, tokens) {
+      var correctOpenTokenName = {
+        parenGroup: 'openParen',
+        bracketGroup: 'openBracket',
+        braceGroup: 'openBrace'
+      }[operationName];
+
+      var openToken = _underscore2.default.first(tokens);
+
+      if (openToken.name !== correctOpenTokenName) {
+        var position = 'L' + openToken.line + '/C' + openToken.column;
+        throw 'Expected to find ' + operationName + ' opening symbol at ' + position;
+      }
+
+      var closeToken = _underscore2.default.last(tokens);
+
+      if (!this.openTokenMatchesCloser(openToken, closeToken)) {
+        var _position = 'L' + closeToken.line + '/C' + closeToken.column;
+        throw 'Expected to find ' + operationName + ' closing symbol at ' + _position;
+      }
+
+      var innerTokens = tokens.slice(1, -1);
+
+      return {
+        operation: operationName,
+        openToken: openToken,
+        closeToken: closeToken,
+        innerNode: this.pemdasTreeFromStatement(innerTokens)
+      };
+    }
+  }, {
+    key: 'pemdasTreeFromStatement',
+    value: function pemdasTreeFromStatement(statementTokens) {
+      if (_underscore2.default.isEmpty(statementTokens)) {
+        return null;
+      }
+
+      var indexOfAssignment = this.indexOfAssignment(statementTokens);
+      if (indexOfAssignment !== -1) {
+        return this.binaryOperationNode('assignment', indexOfAssignment, statementTokens);
+      }
+
+      var indexOfLogicalOR = this.indexOfLogicalOR(statementTokens);
+      if (indexOfLogicalOR !== -1) {
+        return this.binaryOperationNode('boolean', indexOfLogicalOR, statementTokens);
+      }
+
+      var indexOfLogicalAND = this.indexOfLogicalAND(statementTokens);
+      if (indexOfLogicalAND !== -1) {
+        return this.binaryOperationNode('boolean', indexOfLogicalAND, statementTokens);
+      }
+
+      var indexOfEqualityComparison = this.indexOfEqualityComparison(statementTokens);
+      if (indexOfEqualityComparison !== -1) {
+        return this.binaryOperationNode('comparison', indexOfEqualityComparison, statementTokens);
+      }
+
+      var indexOfDifferentialComparison = this.indexOfDifferentialComparison(statementTokens);
+      if (indexOfDifferentialComparison !== -1) {
+        return this.binaryOperationNode('comparison', indexOfDifferentialComparison, statementTokens);
+      }
+
+      var indexOfSubtraction = this.indexOfSubtraction(statementTokens);
+      if (indexOfSubtraction !== -1) {
+        return this.binaryOperationNode('subtraction', indexOfSubtraction, statementTokens);
+      }
+
+      var indexOfAddition = this.indexOfAddition(statementTokens);
+      if (indexOfAddition !== -1) {
+        return this.binaryOperationNode('addition', indexOfAddition, statementTokens);
+      }
+
+      var indexOfDivision = this.indexOfDivision(statementTokens);
+      if (indexOfDivision !== -1) {
+        return this.binaryOperationNode('division', indexOfDivision, statementTokens);
+      }
+
+      var indexOfMultiplication = this.indexOfMultiplication(statementTokens);
+      if (indexOfMultiplication !== -1) {
+        return this.binaryOperationNode('multiplication', indexOfMultiplication, statementTokens);
+      }
+
+      var indexOfExponentiation = this.indexOfExponentiation(statementTokens);
+      if (indexOfExponentiation !== -1) {
+        return this.binaryOperationNode('exponentiation', indexOfExponentiation, statementTokens);
+      }
+
+      var firstToken = _underscore2.default.first(statementTokens);
+
+      if (firstToken.name === 'minus') {
+        return this.unaryOperationNode('negation', statementTokens);
+      }
+
+      if (firstToken.name === 'plus') {
+        return this.unaryOperationNode('substantiation', statementTokens);
+      }
+
+      if (firstToken.name === 'not') {
+        return this.unaryOperationNode('inversion', statementTokens);
+      }
+
+      if (this.isOpenGroupToken(firstToken)) {
+        var groupOperation = {
+          openParen: 'parenGroup',
+          openBracket: 'bracketGroup',
+          openBrace: 'braceGroup'
+        }[firstToken.name];
+
+        return this.groupNode(groupOperation, statementTokens);
+      }
+
+      var lastToken = _underscore2.default.last(statementTokens);
+      var startPos = 'L' + firstToken.line + '/C' + firstToken.column;
+      var endPos = 'L' + lastToken.line + '/C' + lastToken.column;
+      throw 'Unrecognized statement between ' + startPos + ' and ' + endPos;
+    }
+  }, {
+    key: 'traverse',
+    value: function traverse() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokenList;
+      var nodes = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
+
+      if (_underscore2.default.isEmpty(tokens)) return nodes;
+      var firstStatement = this.firstStatementFromTokens(tokens);
+      var firstNode = this.pemdasTreeFromStatement(firstStatement);
+      nodes.push(firstNode);
+      var restOfTokens = tokens.slice(firstStatement.length);
+      return this.traverse(restOfTokens, nodes);
     }
   }]);
 
   return Syntaxer;
 }();
-
-exports.default = Syntaxer;
 
 },{"underscore":1}]},{},[2]);
