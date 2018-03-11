@@ -28,10 +28,14 @@ now available on `window`:
 - `fileText` (the text associated with `lex`)
 - `stoneLex` (a `Lexer` instance loaded with the contents of `/brainstorm.stone`)
 - `stoneFileText` (the text associated with `stoneLex`)
+- `simpleTestLex` (a `Lexer` instance loaded with the contents of `/test.stone`)
+- `simpleTestText` (the text associated with `simpleTestLex`)
+- `simpleTestSyn` (a `Syntaxer` instance loaded with the lex'd contents of `simpleTextText`)
 
 things to try:
 - `lex.traverse()` (returns a list of tokens from the test text)
 - `stoneLex.traverse()` (returns a list of tokens from the entire `/brainstorm.stone` text)
+- `simpleTestSyn.traverse()` (returns a syntax tree from the `/test.stone` text)
 - whatever else you wanna play with... _the world is your oyster_
 
 ## lazy language spec
