@@ -108,9 +108,13 @@ export default class Syntaxer {
     const boundsOfFirstGroup = this.boundsOfFirstGroupInTokens(tokens);
     if (_.isEmpty(boundsOfFirstGroup)) return boundsPairs;
 
-    boundsPairs.push(boundsOfFirstGroup);
+    const previousPair  = _.last(boundsPairs) || [0, 0];
+    const indexOffset   = _.last(previousPair);
+    const canonicalPair = _.map(boundsOfFirstGroup, boundary => boundary + indexOffset);
+    boundsPairs.push(canonicalPair);
+
     const closeIndex   = boundsOfFirstGroup[1];
-    const restOfTokens = tokens.slice(closeIndex + 1);
+    const restOfTokens = tokens.slice(closeIndex);
     return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
   }
 
@@ -212,10 +216,14 @@ export default class Syntaxer {
     const boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(tokens);
     if (_.isEmpty(boundsOfFirstFn)) return boundsPairs;
 
-    boundsPairs.push(boundsOfFirstFn);
+    const previousPair  = _.last(boundsPairs) || [0, 0];
+    const indexOffset   = _.last(previousPair);
+    const canonicalPair = _.map(boundsOfFirstFn, boundary => boundary + indexOffset);
+    boundsPairs.push(canonicalPair);
+
     const closeIndex   = boundsOfFirstFn[1];
-    const restOfTokens = tokens.slice(closeIndex + 1);
-    return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
+    const restOfTokens = tokens.slice(closeIndex);
+    return this.boundsOfAllFunctionDefinitionsInTokens(restOfTokens, boundsPairs);
   }
 
   indexOfBinaryOperation(operationName, tokens, { validLeftTypes, validRightTypes }) {

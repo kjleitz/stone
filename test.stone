@@ -1,7 +1,7 @@
-# foo = 1 + 2
-# bar = 1 + -2
-# baz = 10 < 20
-# xyz = !baz
+foo = 1 + 2
+bar = 1 + -2
+baz = 10 < 20
+xyz = !baz
 
 # FUNCTIONS
 

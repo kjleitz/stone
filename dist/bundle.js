@@ -2046,9 +2046,15 @@ var Syntaxer = function () {
       var boundsOfFirstGroup = this.boundsOfFirstGroupInTokens(tokens);
       if (_underscore2.default.isEmpty(boundsOfFirstGroup)) return boundsPairs;
 
-      boundsPairs.push(boundsOfFirstGroup);
+      var previousPair = _underscore2.default.last(boundsPairs) || [0, 0];
+      var indexOffset = _underscore2.default.last(previousPair);
+      var canonicalPair = _underscore2.default.map(boundsOfFirstGroup, function (boundary) {
+        return boundary + indexOffset;
+      });
+      boundsPairs.push(canonicalPair);
+
       var closeIndex = boundsOfFirstGroup[1];
-      var restOfTokens = tokens.slice(closeIndex + 1);
+      var restOfTokens = tokens.slice(closeIndex);
       return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
     }
   }, {
@@ -2157,10 +2163,16 @@ var Syntaxer = function () {
       var boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(tokens);
       if (_underscore2.default.isEmpty(boundsOfFirstFn)) return boundsPairs;
 
-      boundsPairs.push(boundsOfFirstFn);
+      var previousPair = _underscore2.default.last(boundsPairs) || [0, 0];
+      var indexOffset = _underscore2.default.last(previousPair);
+      var canonicalPair = _underscore2.default.map(boundsOfFirstFn, function (boundary) {
+        return boundary + indexOffset;
+      });
+      boundsPairs.push(canonicalPair);
+
       var closeIndex = boundsOfFirstFn[1];
-      var restOfTokens = tokens.slice(closeIndex + 1);
-      return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
+      var restOfTokens = tokens.slice(closeIndex);
+      return this.boundsOfAllFunctionDefinitionsInTokens(restOfTokens, boundsPairs);
     }
   }, {
     key: "indexOfBinaryOperation",
