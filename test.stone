@@ -16,3 +16,7 @@ add = (n, m):Num n + m
 add = (n, m):Num
   n + m
   "hey"
+
+# returns null (return type is null if not specified)
+log_1 = (msg):
+  console.log(msg)

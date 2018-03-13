@@ -1893,7 +1893,7 @@ var Lexer = function () {
 exports.default = Lexer;
 
 },{"underscore":1}],4:[function(require,module,exports){
-'use strict';
+"use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
@@ -1901,13 +1901,28 @@ Object.defineProperty(exports, "__esModule", {
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
-var _underscore = require('underscore');
+var _underscore = require("underscore");
 
 var _underscore2 = _interopRequireDefault(_underscore);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function errorAt(token) {
+  var message = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : "Syntax error";
+
+  var position = "L" + token.line + "/C" + token.column;
+  return message + " at " + position;
+}
+
+function errorBetween(startToken, endToken) {
+  var message = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : "Syntax error";
+
+  var startPos = "L" + startToken.line + "/C" + startToken.column;
+  var endPos = "L" + endToken.line + "/C" + endToken.column;
+  return message + " between " + startPos + " and " + endPos;
+}
 
 var Syntaxer = function () {
   function Syntaxer(options) {
@@ -1917,33 +1932,33 @@ var Syntaxer = function () {
   }
 
   _createClass(Syntaxer, [{
-    key: 'hasGroupingSymbols',
+    key: "hasGroupingSymbols",
     value: function hasGroupingSymbols(tokens) {
       return _underscore2.default.any(tokens, function (token) {
         return token.type === 'grouping';
       });
     }
   }, {
-    key: 'isGroup',
+    key: "isGroup",
     value: function isGroup(tokens) {
       var openToken = _underscore2.default.first(tokens);
       var closeToken = _underscore2.default.last(tokens);
       return this.openTokenMatchesCloser(openToken, closeToken);
     }
   }, {
-    key: 'isOpenGroupToken',
+    key: "isOpenGroupToken",
     value: function isOpenGroupToken(token) {
       if (token.type !== 'grouping') return false;
       return _underscore2.default.contains(['openParen', 'openBracket', 'openBrace'], token.name);
     }
   }, {
-    key: 'isCloseGroupToken',
+    key: "isCloseGroupToken",
     value: function isCloseGroupToken(token) {
       if (token.type !== 'grouping') return false;
       return _underscore2.default.contains(['openParen', 'openBracket', 'openBrace'], token.name);
     }
   }, {
-    key: 'openTokenMatchesCloser',
+    key: "openTokenMatchesCloser",
     value: function openTokenMatchesCloser(openToken, closeToken) {
       if (openToken.type !== 'grouping' || closeToken.type !== 'grouping') return false;
       var validCloserFor = { '(': ')', '[': ']', '{': '}' };
@@ -1958,7 +1973,7 @@ var Syntaxer = function () {
     // false if a group is not closed properly. Throws an error for orphaned closing symbols.
 
   }, {
-    key: 'hasBalancedGrouping',
+    key: "hasBalancedGrouping",
     value: function hasBalancedGrouping(tokens) {
       var _this = this;
 
@@ -1967,14 +1982,16 @@ var Syntaxer = function () {
         if (token.type !== 'grouping') return;
 
         if (_this.isOpenGroupToken(token)) {
-          return openStack.push(token);
+          openStack.push(token);
+          return;
         }
 
         if (_this.openTokenMatchesCloser(_underscore2.default.last(openStack), token)) {
-          return openStack.pop();
+          openStack.pop();
+          return;
         }
 
-        throw 'Grouping mismatch at L' + token.line + '/C' + token.column;
+        throw errorAt(token, 'Grouping mismatch');
       });
 
       return _underscore2.default.isEmpty(openStack);
@@ -1986,7 +2003,7 @@ var Syntaxer = function () {
     // It will throw an error if there is no matching closing symbol for an open group.
 
   }, {
-    key: 'boundsOfFirstGroupInTokens',
+    key: "boundsOfFirstGroupInTokens",
     value: function boundsOfFirstGroupInTokens(tokens) {
       var _this2 = this;
 
@@ -2009,20 +2026,18 @@ var Syntaxer = function () {
           return _underscore2.default.isEmpty(openStack);
         }
 
-        var position = 'L' + token.line + '/C' + token.column;
-        throw 'Unmatched ' + token.name + ' at ' + position;
+        throw errorAt(token, "Unmatched " + token.name);
       });
 
       if (closeIndex < 0) {
         var openToken = tokens[openIndex];
-        var position = 'L' + token.line + '/C' + token.column;
-        throw 'Unmatched ' + openToken.name + ' at ' + position;
+        throw errorAt(openToken, "Unmatched " + openToken.name);
       }
 
       return [openIndex, closeIndex];
     }
   }, {
-    key: 'boundsOfAllGroupsInTokens',
+    key: "boundsOfAllGroupsInTokens",
     value: function boundsOfAllGroupsInTokens(tokens) {
       var boundsPairs = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
 
@@ -2037,7 +2052,7 @@ var Syntaxer = function () {
       return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
     }
   }, {
-    key: 'indexOfFirstFunctionColon',
+    key: "indexOfFirstFunctionColon",
     value: function indexOfFirstFunctionColon(tokens) {
       return _underscore2.default.findIndex(tokens, function (token, index) {
         if (token.name !== 'colon') return false;
@@ -2076,7 +2091,7 @@ var Syntaxer = function () {
       });
     }
   }, {
-    key: 'boundsOfFirstFunctionDefinitionInTokens',
+    key: "boundsOfFirstFunctionDefinitionInTokens",
     value: function boundsOfFirstFunctionDefinitionInTokens(tokens) {
       var _this3 = this;
 
@@ -2099,13 +2114,11 @@ var Syntaxer = function () {
       var functionIsAnonymous = _underscore2.default.isUndefined(tokenRightBeforeArgs) || tokenRightBeforeArgs.name !== 'identifier';
 
       if (functionIsAnonymous && !functionIsRegular) {
-        var position = 'L' + colonToken.line + '/C' + colonToken.column;
-        throw 'Prop setter functions cannot be anonymous; error at ' + position;
+        throw errorAt(colonToken, 'No argument group given for anonymous function');
       }
 
       if (functionIsAnonymous && tokenRightBeforeArgs && tokenRightBeforeArgs.name === 'def') {
-        var _position = 'L' + colonToken.line + '/C' + colonToken.column;
-        throw 'Function declarations must be named; error at ' + _position;
+        throw errorAt(colonToken, 'No name given for declared function');
       }
 
       var nameIndex = argGroupOpenIndex - 1;
@@ -2129,15 +2142,13 @@ var Syntaxer = function () {
       });
 
       if (endIndex < 0) {
-        var startToken = tokens[startIndex];
-        var _position2 = 'L' + startToken.line + '/C' + startToken.column;
-        throw 'Could not close function starting at ' + _position2;
+        throw errorAt(tokens[startIndex], 'Could not close function');
       }
 
       return [startIndex, endIndex];
     }
   }, {
-    key: 'boundsOfAllFunctionDefinitionsInTokens',
+    key: "boundsOfAllFunctionDefinitionsInTokens",
     value: function boundsOfAllFunctionDefinitionsInTokens(tokens) {
       var boundsPairs = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
 
@@ -2152,7 +2163,7 @@ var Syntaxer = function () {
       return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
     }
   }, {
-    key: 'indexOfBinaryOperation',
+    key: "indexOfBinaryOperation",
     value: function indexOfBinaryOperation(operationName, tokens, _ref) {
       var _this4 = this;
 
@@ -2170,10 +2181,11 @@ var Syntaxer = function () {
         addition: ['plus'],
         division: ['slash'],
         multiplication: ['star'],
-        exponentiation: ['starStar']
+        exponentiation: ['starStar'],
+        dispatch: ['dot']
       }[operationName];
 
-      if (_underscore2.default.isEmpty(operatorNames)) throw 'Invalid operation type \'' + operationName + '\'';
+      if (_underscore2.default.isEmpty(operatorNames)) throw "Invalid binary operation '" + operationName + "'";
 
       var groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
       var fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
@@ -2207,80 +2219,111 @@ var Syntaxer = function () {
       });
     }
   }, {
-    key: 'indexOfComparisonOperation',
+    key: "indexOfComparisonOperation",
     value: function indexOfComparisonOperation(operationName, tokens) {
       var validLeftTypes = ['word', 'string', 'number'];
       var validRightTypes = ['word', 'string', 'number', 'operator'];
       return this.indexOfBinaryOperation(operationName, tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
-    key: 'indexOfAssignment',
+    key: "indexOfAssignment",
     value: function indexOfAssignment(tokens) {
       var validLeftTypes = ['word'];
       var validRightTypes = ['word', 'number', 'string', 'operator'];
       return this.indexOfBinaryOperation('assignment', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
-    key: 'indexOfSequence',
+    key: "indexOfSequence",
     value: function indexOfSequence(tokens) {
       var validLeftTypes = ['word', 'string', 'number'];
       var validRightTypes = ['word', 'string', 'number', 'operator'];
       return this.indexOfBinaryOperation('sequence', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
-    key: 'indexOfLogicalOR',
+    key: "indexOfLogicalOR",
     value: function indexOfLogicalOR(tokens) {
       return this.indexOfComparisonOperation('logicalOR', tokens);
     }
   }, {
-    key: 'indexOfLogicalAND',
+    key: "indexOfLogicalAND",
     value: function indexOfLogicalAND(tokens) {
       return this.indexOfComparisonOperation('logicalAND', tokens);
     }
   }, {
-    key: 'indexOfEqualityComparison',
+    key: "indexOfEqualityComparison",
     value: function indexOfEqualityComparison(tokens) {
       return this.indexOfComparisonOperation('equalityComparison', tokens);
     }
   }, {
-    key: 'indexOfDifferentialComparison',
+    key: "indexOfDifferentialComparison",
     value: function indexOfDifferentialComparison(tokens) {
       return this.indexOfComparisonOperation('differentialComparison', tokens);
     }
   }, {
-    key: 'indexOfSubtraction',
+    key: "indexOfSubtraction",
     value: function indexOfSubtraction(tokens) {
       var validLeftTypes = ['word', 'number', 'string'];
       var validRightTypes = ['word', 'number', 'string', 'operator'];
       return this.indexOfBinaryOperation('subtraction', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
-    key: 'indexOfAddition',
+    key: "indexOfAddition",
     value: function indexOfAddition(tokens) {
       var validLeftTypes = ['word', 'number', 'string'];
       var validRightTypes = ['word', 'number', 'string', 'operator'];
       return this.indexOfBinaryOperation('addition', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
-    key: 'indexOfDivision',
+    key: "indexOfDivision",
     value: function indexOfDivision(tokens) {
       var validLeftTypes = ['word', 'number'];
       var validRightTypes = ['word', 'number', 'operator'];
       return this.indexOfBinaryOperation('division', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
-    key: 'indexOfMultiplication',
+    key: "indexOfMultiplication",
     value: function indexOfMultiplication(tokens) {
       var validLeftTypes = ['word', 'number', 'string'];
       var validRightTypes = ['word', 'number', 'operator'];
       return this.indexOfBinaryOperation('multiplication', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
-    key: 'indexOfExponentiation',
+    key: "indexOfExponentiation",
     value: function indexOfExponentiation(tokens) {
       var validLeftTypes = ['word', 'number'];
       var validRightTypes = ['word', 'number', 'operator'];
       return this.indexOfBinaryOperation('exponentiation', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
+  }, {
+    key: "indexOfDispatch",
+    value: function indexOfDispatch(tokens) {
+      var validLeftTypes = ['word', 'number', 'string'];
+      var validRightTypes = ['word'];
+      return this.indexOfBinaryOperation('dispatch', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
+  }, {
+    key: "indexOfFunctionCall",
+    value: function indexOfFunctionCall(tokens) {
+      var offset = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+
+      var boundsOfFirstGroup = this.boundsOfFirstGroupInTokens(tokens);
+      if (_underscore2.default.isEmpty(boundsOfFirstGroup)) return -1;
+
+      var indexOfOpenToken = boundsOfFirstGroup[0];
+      var openToken = tokens[indexOfOpenToken];
+      var leftToken = tokens[indexOfOpenToken - 1];
+      if (openToken.name === 'openParen' && leftToken) {
+        var validTypes = ['word', 'string', 'number'];
+        var validNames = ['closeParen', 'closeBracket', 'closeBrace'];
+        if (_underscore2.default.contains(validTypes, leftToken.type) || _underscore2.default.contains(validNames, leftToken.name)) {
+          return indexOfOpenToken + offset;
+        }
+      }
+
+      var indexOfCloseToken = boundsOfFirstGroup[1];
+      var restOfTokens = tokens.slice(indexOfCloseToken);
+      var currentOffset = indexOfCloseToken + offset;
+      return this.indexOfFunctionCall(restOfTokens, currentOffset);
     }
 
     // Given a set of tokens, returns the tokens up to the end of the first line (or spanning
@@ -2291,7 +2334,7 @@ var Syntaxer = function () {
     // EDIT: ...SLASH TODO: CONSIDER SURROUNDING FUNCTION DEFS W/ CURLY BRACES MAYBE
 
   }, {
-    key: 'firstStatementFromTokens',
+    key: "firstStatementFromTokens",
     value: function firstStatementFromTokens(tokens) {
       var _this5 = this;
 
@@ -2325,12 +2368,11 @@ var Syntaxer = function () {
       return _underscore2.default.first(tokens, statementEndPos + 1);
     }
   }, {
-    key: 'identityNode',
+    key: "identityNode",
     value: function identityNode(token) {
       var validIdentityTypes = ['word', 'string', 'number'];
       if (!_underscore2.default.contains(validIdentityTypes, token.type)) {
-        var position = 'L' + token.line + '/C' + token.column;
-        throw 'Expected to find valid identity token at ' + position;
+        throw errorAt(token, 'Expected to find valid identity token');
       }
 
       return {
@@ -2339,25 +2381,24 @@ var Syntaxer = function () {
       };
     }
   }, {
-    key: 'unaryOperationNode',
+    key: "unaryOperationNode",
     value: function unaryOperationNode(operationName, tokens) {
       var operatorToken = _underscore2.default.first(tokens);
       var rightTokens = _underscore2.default.rest(tokens);
 
       var validUnaryOperatorNames = ['plus', 'minus', 'not'];
       if (!_underscore2.default.contains(validUnaryOperatorNames, operatorToken.name)) {
-        var position = 'L' + operatorToken.line + '/C' + operatorToken.column;
-        throw 'Expected to find ' + operationName + ' at ' + position;
+        throw errorAt(operatorToken, "Expected to find " + operationName);
       }
 
       return {
         operation: operationName,
         token: operatorToken,
-        rightNode: this.pemdasTreeFromStatement(rightTokens)
+        rightNode: this.pemdasNodeFromStatement(rightTokens)
       };
     }
   }, {
-    key: 'binaryOperationNode',
+    key: "binaryOperationNode",
     value: function binaryOperationNode(operationName, operatorIndex, tokens) {
       var tokenNames = {
         subtraction: ['minus'],
@@ -2366,42 +2407,41 @@ var Syntaxer = function () {
         multiplication: ['star'],
         exponentiation: ['starStar'],
         assignment: ['equals'],
+        dispatch: ['dot'],
         comparison: ['equalTo', 'greaterThan', 'greaterThanOrEqualTo', 'lessThan', 'lessThanOrEqualTo', 'notEqualTo'],
         boolean: ['and', 'or']
       }[operationName];
 
       var operatorToken = tokens[operatorIndex];
-      var operatorPos = 'L' + operatorToken.line + '/C' + operatorToken.column;
       if (!_underscore2.default.contains(tokenNames, operatorToken.name)) {
-        throw 'Expected to find ' + operationName + ' at ' + operatorPos;
+        throw errorAt(operatorToken, "Expected to find " + operationName);
       }
 
       var leftTokens = _underscore2.default.first(tokens, operatorIndex);
       if (_underscore2.default.isEmpty(leftTokens)) {
-        throw 'Found no left-hand-side for ' + operationName + ' at ' + operatorPos;
+        throw errorAt(operatorToken, "Found no left-hand side for " + operationName);
       }
 
       var rightTokens = tokens.slice(operatorIndex + 1);
       if (_underscore2.default.isEmpty(rightTokens)) {
-        throw 'Found no right-hand-side for ' + operationName + ' at ' + operatorPos;
+        throw errorAt(operatorToken, "Found no right-hand side for " + operationName);
       }
 
       return {
         operation: operationName,
         token: operatorToken,
-        leftNode: this.pemdasTreeFromStatement(leftTokens),
-        rightNode: this.pemdasTreeFromStatement(rightTokens)
+        leftNode: this.pemdasNodeFromStatement(leftTokens),
+        rightNode: this.pemdasNodeFromStatement(rightTokens)
       };
     }
   }, {
-    key: 'sequenceNode',
+    key: "sequenceNode",
     value: function sequenceNode(firstCommaIndex, tokens) {
       var _this6 = this;
 
       var firstComma = tokens[firstCommaIndex];
       if (firstComma.name !== 'comma') {
-        var position = 'L' + firstComma.line + '/C' + firstComma.column;
-        throw 'Expected to find comma at ' + position;
+        throw errorAt(firstComma, 'Expected to find comma');
       }
 
       var sequenceSets = _underscore2.default.reduce(tokens, function (sets, token) {
@@ -2415,7 +2455,7 @@ var Syntaxer = function () {
       }, [[]]);
 
       var sequenceNodes = _underscore2.default.map(sequenceSets, function (set) {
-        return _this6.pemdasTreeFromStatement(set);
+        return _this6.pemdasNodeFromStatement(set);
       });
 
       return {
@@ -2426,7 +2466,7 @@ var Syntaxer = function () {
       };
     }
   }, {
-    key: 'groupNode',
+    key: "groupNode",
     value: function groupNode(operationName, tokens) {
       var correctOpenTokenName = {
         parenGroup: 'openParen',
@@ -2435,17 +2475,13 @@ var Syntaxer = function () {
       }[operationName];
 
       var openToken = _underscore2.default.first(tokens);
-
       if (openToken.name !== correctOpenTokenName) {
-        var position = 'L' + openToken.line + '/C' + openToken.column;
-        throw 'Expected to find ' + operationName + ' opening symbol at ' + position;
+        throw errorAt(openToken, "Expected " + operationName + " opening symbol");
       }
 
       var closeToken = _underscore2.default.last(tokens);
-
       if (!this.openTokenMatchesCloser(openToken, closeToken)) {
-        var _position3 = 'L' + closeToken.line + '/C' + closeToken.column;
-        throw 'Expected to find ' + operationName + ' closing symbol at ' + _position3;
+        throw errorAt(closeToken, "Expected " + operationName + " closing symbol");
       }
 
       var innerTokens = tokens.slice(1, -1);
@@ -2454,23 +2490,21 @@ var Syntaxer = function () {
         operation: operationName,
         openToken: openToken,
         closeToken: closeToken,
-        innerNode: this.pemdasTreeFromStatement(innerTokens)
+        innerNode: this.pemdasNodeFromStatement(innerTokens)
       };
     }
   }, {
-    key: 'functionDefinitionNode',
+    key: "functionDefinitionNode",
     value: function functionDefinitionNode(boundsOfDef, tokens) {
       var firstToken = tokens[0];
       var secondToken = tokens[1];
 
       if (boundsOfDef[0] !== 0) {
-        var position = 'L' + firstToken.line + '/C' + firstToken.column;
-        throw 'Expected function definition at ' + position;
+        throw errorAt(firstToken, 'Expected function definition');
       }
 
       var colonIndex = this.indexOfFirstFunctionColon(tokens);
       var colonToken = tokens[colonIndex];
-      var twoTokensToTheLeft = tokens[colonIndex - 2];
       var oneTokenToTheLeft = tokens[colonIndex - 1];
       var oneTokenToTheRight = tokens[colonIndex + 1];
       var twoTokensToTheRight = tokens[colonIndex + 2];
@@ -2479,7 +2513,6 @@ var Syntaxer = function () {
       var isPropSetter = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name === 'set';
       var isPropDefault = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name !== 'set';
       var isDeclaration = firstToken.name === 'def';
-      var isAnonymous = firstToken.name === 'openParen';
 
       var spacesAfterColon = oneTokenToTheRight ? oneTokenToTheRight.column - colonToken.column - 1 : 999;
       var isTyped = oneTokenToTheRight.type === 'word' && spacesAfterColon === 0;
@@ -2493,19 +2526,55 @@ var Syntaxer = function () {
       var blockTokens = tokens.slice(blockStartIndex);
 
       return {
-        operationName: 'functionDefinition',
+        operation: 'functionDefinition',
         isDeclaration: isDeclaration,
         isPropSetter: isPropSetter,
         isPropDefault: isPropDefault,
+        colonToken: colonToken,
         nameToken: nameToken,
         typeToken: typeToken,
-        argumentsNode: this.pemdasTreeFromStatement(argumentsTokens),
+        argumentsNode: this.pemdasNodeFromStatement(argumentsTokens),
         blockNodes: this.traverse(blockTokens)
       };
     }
   }, {
-    key: 'pemdasTreeFromStatement',
-    value: function pemdasTreeFromStatement(statementTokens) {
+    key: "functionCallNode",
+    value: function functionCallNode(indexOfOpenToken, tokens) {
+      var openToken = tokens[indexOfOpenToken];
+      var leftToken = tokens[indexOfOpenToken - 1];
+
+      if (!openToken || !leftToken || openToken.name !== 'openParen') {
+        throw errorAt(openToken, 'Expected function call');
+      }
+
+      var validLeftTypes = ['word', 'string', 'number'];
+      var validLeftNames = ['closeParen', 'closeBracket', 'closeBrace'];
+      if (!(_underscore2.default.contains(validLeftTypes, leftToken.type) || _underscore2.default.contains(validLeftNames, leftToken.name))) {
+        throw errorAt(leftToken, 'Invalid function callee');
+      }
+
+      var calleeTokens = _underscore2.default.first(tokens, indexOfOpenToken);
+      var restOfTokens = tokens.slice(indexOfOpenToken);
+      var boundsOfArgs = this.boundsOfFirstGroupInTokens(restOfTokens);
+
+      if (_underscore2.default.isEmpty(boundsOfArgs)) {
+        throw errorAt(openToken, 'Incomplete argument group for function call');
+      }
+
+      var closeToken = restOfTokens[boundsOfArgs[1]];
+      var argumentsTokens = restOfTokens.slice(boundsOfArgs[0] + 1, boundsOfArgs[1]);
+
+      return {
+        operation: 'functionCall',
+        openToken: openToken,
+        closeToken: closeToken,
+        calleeNode: this.pemdasNodeFromStatement(calleeTokens),
+        argumentsNode: this.pemdasNodeFromStatement(argumentsTokens)
+      };
+    }
+  }, {
+    key: "pemdasNodeFromStatement",
+    value: function pemdasNodeFromStatement(statementTokens) {
       if (_underscore2.default.isEmpty(statementTokens)) {
         return null;
       }
@@ -2544,24 +2613,28 @@ var Syntaxer = function () {
         return this.binaryOperationNode('comparison', indexOfDifferentialComparison, statementTokens);
       }
 
-      var indexOfSubtraction = this.indexOfSubtraction(statementTokens);
-      if (indexOfSubtraction !== -1) {
-        return this.binaryOperationNode('subtraction', indexOfSubtraction, statementTokens);
-      }
-
       var indexOfAddition = this.indexOfAddition(statementTokens);
-      if (indexOfAddition !== -1) {
-        return this.binaryOperationNode('addition', indexOfAddition, statementTokens);
+      var indexOfSubtraction = this.indexOfSubtraction(statementTokens);
+      var firstLinearMathIndex = _underscore2.default.min(_underscore2.default.without([indexOfAddition, indexOfSubtraction], -1));
+      switch (firstLinearMathIndex) {
+        case indexOfAddition:
+          return this.binaryOperationNode('addition', indexOfAddition, statementTokens);
+        case indexOfSubtraction:
+          return this.binaryOperationNode('subtraction', indexOfSubtraction, statementTokens);
+        default:
+          break; // to satisfy eslint
       }
 
       var indexOfDivision = this.indexOfDivision(statementTokens);
-      if (indexOfDivision !== -1) {
-        return this.binaryOperationNode('division', indexOfDivision, statementTokens);
-      }
-
       var indexOfMultiplication = this.indexOfMultiplication(statementTokens);
-      if (indexOfMultiplication !== -1) {
-        return this.binaryOperationNode('multiplication', indexOfMultiplication, statementTokens);
+      var firstPlanarMathIndex = _underscore2.default.min(_underscore2.default.without([indexOfDivision, indexOfMultiplication], -1));
+      switch (firstPlanarMathIndex) {
+        case indexOfDivision:
+          return this.binaryOperationNode('division', indexOfDivision, statementTokens);
+        case indexOfMultiplication:
+          return this.binaryOperationNode('multiplication', indexOfMultiplication, statementTokens);
+        default:
+          break; // to satisfy eslint
       }
 
       var indexOfExponentiation = this.indexOfExponentiation(statementTokens);
@@ -2570,17 +2643,15 @@ var Syntaxer = function () {
       }
 
       var firstToken = _underscore2.default.first(statementTokens);
-
-      if (firstToken.name === 'minus') {
-        return this.unaryOperationNode('negation', statementTokens);
-      }
-
-      if (firstToken.name === 'plus') {
-        return this.unaryOperationNode('substantiation', statementTokens);
-      }
-
-      if (firstToken.name === 'not') {
-        return this.unaryOperationNode('inversion', statementTokens);
+      switch (firstToken.name) {
+        case 'minus':
+          return this.unaryOperationNode('negation', statementTokens);
+        case 'plus':
+          return this.unaryOperationNode('substantiation', statementTokens);
+        case 'not':
+          return this.unaryOperationNode('inversion', statementTokens);
+        default:
+          break; // to satisfy eslint
       }
 
       var boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(statementTokens);
@@ -2588,30 +2659,41 @@ var Syntaxer = function () {
         return this.functionDefinitionNode(boundsOfFirstFn, statementTokens);
       }
 
-      if (this.isOpenGroupToken(firstToken)) {
-        var groupOperation = {
-          openParen: 'parenGroup',
-          openBracket: 'bracketGroup',
-          openBrace: 'braceGroup'
-        }[firstToken.name];
+      var indexOfDispatch = this.indexOfDispatch(statementTokens);
+      var indexOfFunctionCall = this.indexOfFunctionCall(statementTokens);
+      var firstAccessionIndex = _underscore2.default.min(_underscore2.default.without([indexOfDispatch, indexOfFunctionCall], -1));
+      switch (firstAccessionIndex) {
+        case indexOfDispatch:
+          return this.binaryOperationNode('dispatch', indexOfDispatch, statementTokens);
+        case indexOfFunctionCall:
+          return this.functionCallNode(indexOfFunctionCall, statementTokens);
+        default:
+          break; // to satisfy eslint
+      }
 
-        return this.groupNode(groupOperation, statementTokens);
+      switch (firstToken.name) {
+        case 'openParen':
+          return this.groupNode('parenGroup', statementTokens);
+        case 'openBracket':
+          return this.groupNode('bracketGroup', statementTokens);
+        case 'openBrace':
+          return this.groupNode('braceGroup', statementTokens);
+        default:
+          break; // to satisfy eslint
       }
 
       var lastToken = _underscore2.default.last(statementTokens);
-      var startPos = 'L' + firstToken.line + '/C' + firstToken.column;
-      var endPos = 'L' + lastToken.line + '/C' + lastToken.column;
-      throw 'Unrecognized statement between ' + startPos + ' and ' + endPos;
+      throw errorBetween(firstToken, lastToken, 'Unrecognized statement');
     }
   }, {
-    key: 'traverse',
+    key: "traverse",
     value: function traverse() {
       var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokenList;
       var nodes = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
 
       if (_underscore2.default.isEmpty(tokens)) return nodes;
       var firstStatement = this.firstStatementFromTokens(tokens);
-      var firstNode = this.pemdasTreeFromStatement(firstStatement);
+      var firstNode = this.pemdasNodeFromStatement(firstStatement);
       nodes.push(firstNode);
       var restOfTokens = tokens.slice(firstStatement.length);
       return this.traverse(restOfTokens, nodes);
