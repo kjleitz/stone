@@ -1,5 +1,16 @@
 import _ from 'underscore';
 
+function errorAt(token, message = "Syntax error") {
+  const position =  `L${token.line}/C${token.column}`;
+  return `${message} at ${position}`;
+}
+
+function errorBetween(startToken, endToken, message = "Syntax error") {
+  const startPos  = `L${startToken.line}/C${startToken.column}`;
+  const endPos    = `L${endToken.line}/C${endToken.column}`;
+  return `${message} between ${startPos} and ${endPos}`;
+}
+
 export default class Syntaxer {
   constructor(options) {
     this.tokenList = options.tokenList;
@@ -43,14 +54,16 @@ export default class Syntaxer {
       if (token.type !== 'grouping') return;
 
       if (this.isOpenGroupToken(token)) {
-        return openStack.push(token);
+        openStack.push(token);
+        return;
       }
 
       if (this.openTokenMatchesCloser(_.last(openStack), token)) {
-        return openStack.pop();
+        openStack.pop();
+        return;
       }
 
-      throw `Grouping mismatch at L${token.line}/C${token.column}`;
+      throw errorAt(token, `Grouping mismatch`);
     });
 
     return _.isEmpty(openStack);
@@ -64,7 +77,7 @@ export default class Syntaxer {
     const openIndex = _.findIndex(tokens, token => this.isOpenGroupToken(token));
     if (openIndex < 0) return [];
 
-    const openStack = [];
+    const openStack  = [];
     const closeIndex = openIndex + _.findIndex(tokens.slice(openIndex), (token) => {
       if (token.type !== 'grouping') return false;
 
@@ -78,14 +91,12 @@ export default class Syntaxer {
         return _.isEmpty(openStack);
       }
 
-      const position = `L${token.line}/C${token.column}`;
-      throw `Unmatched ${token.name} at ${position}`;
+      throw errorAt(token, `Unmatched ${token.name}`);
     });
 
     if (closeIndex < 0) {
       const openToken = tokens[openIndex];
-      const position  = `L${token.line}/C${token.column}`;
-      throw `Unmatched ${openToken.name} at ${position}`;
+      throw errorAt(openToken, `Unmatched ${openToken.name}`);
     }
 
     return [openIndex, closeIndex];
@@ -161,13 +172,11 @@ export default class Syntaxer {
     const functionIsAnonymous  = _.isUndefined(tokenRightBeforeArgs) || tokenRightBeforeArgs.name !== 'identifier';
 
     if (functionIsAnonymous && !functionIsRegular) {
-      const position   = `L${colonToken.line}/C${colonToken.column}`;
-      throw `Prop setter functions cannot be anonymous; error at ${position}`;
+      throw errorAt(colonToken, `No argument group given for anonymous function`);
     }
 
     if (functionIsAnonymous && tokenRightBeforeArgs && tokenRightBeforeArgs.name === 'def') {
-      const position   = `L${colonToken.line}/C${colonToken.column}`;
-      throw `Function declarations must be named; error at ${position}`;
+      throw errorAt(colonToken, `No name given for declared function`);
     }
 
     const nameIndex     = argGroupOpenIndex - 1;
@@ -191,9 +200,7 @@ export default class Syntaxer {
     });
 
     if (endIndex < 0) {
-      const startToken = tokens[startIndex];
-      const position   = `L${startToken.line}/C${startToken.column}`;
-      throw `Could not close function starting at ${position}`;
+      throw errorAt(tokens[startIndex], `Could not close function`);
     }
 
     return [startIndex, endIndex];
@@ -224,9 +231,10 @@ export default class Syntaxer {
       division:               ['slash'],
       multiplication:         ['star'],
       exponentiation:         ['starStar'],
-    }[operationName]
+      dispatch:               ['dot'],
+    }[operationName];
 
-    if (_.isEmpty(operatorNames)) throw `Invalid operation type '${operationName}'`;
+    if (_.isEmpty(operatorNames)) throw `Invalid binary operation '${operationName}'`;
 
     const groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
     const fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
@@ -332,6 +340,33 @@ export default class Syntaxer {
     return this.indexOfBinaryOperation('exponentiation', tokens, { validLeftTypes, validRightTypes });
   }
 
+  indexOfDispatch(tokens) {
+    const validLeftTypes  = ['word', 'number', 'string'];
+    const validRightTypes = ['word'];
+    return this.indexOfBinaryOperation('dispatch', tokens, { validLeftTypes, validRightTypes });
+  }
+
+  indexOfFunctionCall(tokens, offset = 0) {
+    const boundsOfFirstGroup = this.boundsOfFirstGroupInTokens(tokens);
+    if (_.isEmpty(boundsOfFirstGroup)) return -1;
+
+    const indexOfOpenToken = boundsOfFirstGroup[0];
+    const openToken        = tokens[indexOfOpenToken];
+    const leftToken        = tokens[indexOfOpenToken - 1];
+    if (openToken.name === 'openParen' && leftToken) {
+      const validTypes = ['word', 'string', 'number'];
+      const validNames = ['closeParen', 'closeBracket', 'closeBrace'];
+      if (_.contains(validTypes, leftToken.type) || _.contains(validNames, leftToken.name)) {
+        return indexOfOpenToken + offset;
+      }
+    }
+
+    const indexOfCloseToken = boundsOfFirstGroup[1];
+    const restOfTokens      = tokens.slice(indexOfCloseToken);
+    const currentOffset     = indexOfCloseToken + offset;
+    return this.indexOfFunctionCall(restOfTokens, currentOffset);
+  }
+
   // Given a set of tokens, returns the tokens up to the end of the first line (or spanning
   // multiple lines if there are grouping symbols), to the end of the contiguous "statement".
   // Does not include the block of a function/proto definition, etc., as blocks are multiple
@@ -372,13 +407,12 @@ export default class Syntaxer {
   identityNode(token) {
     const validIdentityTypes = ['word', 'string', 'number'];
     if (!_.contains(validIdentityTypes, token.type)) {
-      const position = `L${token.line}/C${token.column}`;
-      throw `Expected to find valid identity token at ${position}`;
+      throw errorAt(token, `Expected to find valid identity token`);
     }
 
     return {
       operation: 'identity',
-      token:     token,
+      token,
     };
   }
 
@@ -388,14 +422,13 @@ export default class Syntaxer {
 
     const validUnaryOperatorNames = ['plus', 'minus', 'not'];
     if (!_.contains(validUnaryOperatorNames, operatorToken.name)) {
-      const position = `L${operatorToken.line}/C${operatorToken.column}`;
-      throw `Expected to find ${operationName} at ${position}`;
+      throw errorAt(operatorToken, `Expected to find ${operationName}`);
     }
 
     return {
       operation: operationName,
       token:     operatorToken,
-      rightNode: this.pemdasTreeFromStatement(rightTokens),
+      rightNode: this.pemdasNodeFromStatement(rightTokens),
     };
   }
 
@@ -407,6 +440,7 @@ export default class Syntaxer {
       multiplication: ['star'],
       exponentiation: ['starStar'],
       assignment:     ['equals'],
+      dispatch:       ['dot'],
       comparison: [
         'equalTo',
         'greaterThan',
@@ -422,34 +456,32 @@ export default class Syntaxer {
     }[operationName];
 
     const operatorToken = tokens[operatorIndex];
-    const operatorPos   = `L${operatorToken.line}/C${operatorToken.column}`;
     if (!_.contains(tokenNames, operatorToken.name)) {
-      throw `Expected to find ${operationName} at ${operatorPos}`;
+      throw errorAt(operatorToken, `Expected to find ${operationName}`);
     }
 
     const leftTokens = _.first(tokens, operatorIndex);
     if (_.isEmpty(leftTokens)) {
-      throw `Found no left-hand-side for ${operationName} at ${operatorPos}`;
+      throw errorAt(operatorToken, `Found no left-hand side for ${operationName}`);
     }
 
     const rightTokens = tokens.slice(operatorIndex + 1);
     if (_.isEmpty(rightTokens)) {
-      throw `Found no right-hand-side for ${operationName} at ${operatorPos}`;
+      throw errorAt(operatorToken, `Found no right-hand side for ${operationName}`);
     }
 
     return {
       operation: operationName,
       token:     operatorToken,
-      leftNode:  this.pemdasTreeFromStatement(leftTokens),
-      rightNode: this.pemdasTreeFromStatement(rightTokens),
+      leftNode:  this.pemdasNodeFromStatement(leftTokens),
+      rightNode: this.pemdasNodeFromStatement(rightTokens),
     };
   }
 
   sequenceNode(firstCommaIndex, tokens) {
     const firstComma = tokens[firstCommaIndex];
     if (firstComma.name !== 'comma') {
-      const position = `L${firstComma.line}/C${firstComma.column}`;
-      throw `Expected to find comma at ${position}`;
+      throw errorAt(firstComma, `Expected to find comma`);
     }
 
     const sequenceSets = _.reduce(tokens, (sets, token) => {
@@ -462,13 +494,13 @@ export default class Syntaxer {
       return sets;
     }, [[]]);
 
-    const sequenceNodes = _.map(sequenceSets, set => this.pemdasTreeFromStatement(set));
+    const sequenceNodes = _.map(sequenceSets, set => this.pemdasNodeFromStatement(set));
 
     return {
-      operation:     'sequence',
-      startToken:    _.first(tokens),
-      endToken:      _.last(tokens),
-      sequenceNodes: sequenceNodes,
+      operation:  'sequence',
+      startToken: _.first(tokens),
+      endToken:   _.last(tokens),
+      sequenceNodes,
     };
   }
 
@@ -477,29 +509,25 @@ export default class Syntaxer {
       parenGroup:   'openParen',
       bracketGroup: 'openBracket',
       braceGroup:   'openBrace',
-    }[operationName]
+    }[operationName];
 
     const openToken = _.first(tokens);
-
     if (openToken.name !== correctOpenTokenName) {
-      const position = `L${openToken.line}/C${openToken.column}`;
-      throw `Expected to find ${operationName} opening symbol at ${position}`;
+      throw errorAt(openToken, `Expected ${operationName} opening symbol`);
     }
 
     const closeToken = _.last(tokens);
-
     if (!this.openTokenMatchesCloser(openToken, closeToken)) {
-      const position = `L${closeToken.line}/C${closeToken.column}`;
-      throw `Expected to find ${operationName} closing symbol at ${position}`;
+      throw errorAt(closeToken, `Expected ${operationName} closing symbol`);
     }
 
     const innerTokens = tokens.slice(1, -1);
 
     return {
-      operation:  operationName,
-      openToken:  openToken,
-      closeToken: closeToken,
-      innerNode:  this.pemdasTreeFromStatement(innerTokens),
+      operation: operationName,
+      openToken,
+      closeToken,
+      innerNode: this.pemdasNodeFromStatement(innerTokens),
     };
   }
 
@@ -508,13 +536,11 @@ export default class Syntaxer {
     const secondToken = tokens[1];
 
     if (boundsOfDef[0] !== 0) {
-      const position = `L${firstToken.line}/C${firstToken.column}`;
-      throw `Expected function definition at ${position}`;
+      throw errorAt(firstToken, `Expected function definition`);
     }
 
     const colonIndex          = this.indexOfFirstFunctionColon(tokens);
     const colonToken          = tokens[colonIndex];
-    const twoTokensToTheLeft  = tokens[colonIndex - 2];
     const oneTokenToTheLeft   = tokens[colonIndex - 1];
     const oneTokenToTheRight  = tokens[colonIndex + 1];
     const twoTokensToTheRight = tokens[colonIndex + 2];
@@ -523,12 +549,11 @@ export default class Syntaxer {
     const isPropSetter  = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name === 'set';
     const isPropDefault = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name !== 'set';
     const isDeclaration = firstToken.name        === 'def';
-    const isAnonymous   = firstToken.name        === 'openParen';
 
     const spacesAfterColon = oneTokenToTheRight ? oneTokenToTheRight.column - colonToken.column - 1 : 999;
     const isTyped          = oneTokenToTheRight.type === 'word' && spacesAfterColon === 0;
     const typeToken        = isTyped ? oneTokenToTheRight : null;
-    const nameToken        = isDeclaration ? secondToken : isPropSetter ? firstToken : null;
+    const nameToken        = isDeclaration ? secondToken : (isPropSetter ? firstToken : null);
 
     const boundsOfArgs    = hasArguments ? this.boundsOfFirstGroupInTokens(tokens) : [];
     const argumentsTokens = _.isEmpty(boundsOfArgs) ? [] : tokens.slice(boundsOfArgs[0] + 1, boundsOfArgs[1]);
@@ -537,18 +562,53 @@ export default class Syntaxer {
     const blockTokens     = tokens.slice(blockStartIndex);
 
     return {
-      operationName: 'functionDefinition',
+      operation: 'functionDefinition',
       isDeclaration,
       isPropSetter,
       isPropDefault,
+      colonToken,
       nameToken,
       typeToken,
-      argumentsNode: this.pemdasTreeFromStatement(argumentsTokens),
+      argumentsNode: this.pemdasNodeFromStatement(argumentsTokens),
       blockNodes:    this.traverse(blockTokens),
     };
   }
 
-  pemdasTreeFromStatement(statementTokens) {
+  functionCallNode(indexOfOpenToken, tokens) {
+    const openToken = tokens[indexOfOpenToken];
+    const leftToken = tokens[indexOfOpenToken - 1];
+
+    if (!openToken || !leftToken || openToken.name !== 'openParen') {
+      throw errorAt(openToken, `Expected function call`);
+    }
+
+    const validLeftTypes = ['word', 'string', 'number'];
+    const validLeftNames = ['closeParen', 'closeBracket', 'closeBrace'];
+    if (!(_.contains(validLeftTypes, leftToken.type) || _.contains(validLeftNames, leftToken.name))) {
+      throw errorAt(leftToken, `Invalid function callee`);
+    }
+
+    const calleeTokens = _.first(tokens, indexOfOpenToken);
+    const restOfTokens = tokens.slice(indexOfOpenToken);
+    const boundsOfArgs = this.boundsOfFirstGroupInTokens(restOfTokens);
+
+    if (_.isEmpty(boundsOfArgs)) {
+      throw errorAt(openToken, `Incomplete argument group for function call`);
+    }
+
+    const closeToken      = restOfTokens[boundsOfArgs[1]];
+    const argumentsTokens = restOfTokens.slice(boundsOfArgs[0] + 1, boundsOfArgs[1]);
+
+    return {
+      operation: 'functionCall',
+      openToken,
+      closeToken,
+      calleeNode:    this.pemdasNodeFromStatement(calleeTokens),
+      argumentsNode: this.pemdasNodeFromStatement(argumentsTokens),
+    };
+  }
+
+  pemdasNodeFromStatement(statementTokens) {
     if (_.isEmpty(statementTokens)) {
       return null;
     }
@@ -587,24 +647,22 @@ export default class Syntaxer {
       return this.binaryOperationNode('comparison', indexOfDifferentialComparison, statementTokens);
     }
 
-    const indexOfSubtraction = this.indexOfSubtraction(statementTokens);
-    if (indexOfSubtraction !== -1) {
-      return this.binaryOperationNode('subtraction', indexOfSubtraction, statementTokens);
+    const indexOfAddition      = this.indexOfAddition(statementTokens);
+    const indexOfSubtraction   = this.indexOfSubtraction(statementTokens);
+    const firstLinearMathIndex = _.min(_.without([indexOfAddition, indexOfSubtraction], -1));
+    switch (firstLinearMathIndex) {
+      case indexOfAddition:    return this.binaryOperationNode('addition',    indexOfAddition,    statementTokens);
+      case indexOfSubtraction: return this.binaryOperationNode('subtraction', indexOfSubtraction, statementTokens);
+      default: break; // to satisfy eslint
     }
 
-    const indexOfAddition = this.indexOfAddition(statementTokens);
-    if (indexOfAddition !== -1) {
-      return this.binaryOperationNode('addition', indexOfAddition, statementTokens);
-    }
-
-    const indexOfDivision = this.indexOfDivision(statementTokens);
-    if (indexOfDivision !== -1) {
-      return this.binaryOperationNode('division', indexOfDivision, statementTokens);
-    }
-
+    const indexOfDivision       = this.indexOfDivision(statementTokens);
     const indexOfMultiplication = this.indexOfMultiplication(statementTokens);
-    if (indexOfMultiplication !== -1) {
-      return this.binaryOperationNode('multiplication', indexOfMultiplication, statementTokens);
+    const firstPlanarMathIndex  = _.min(_.without([indexOfDivision, indexOfMultiplication], -1));
+    switch (firstPlanarMathIndex) {
+      case indexOfDivision:       return this.binaryOperationNode('division',       indexOfDivision,       statementTokens);
+      case indexOfMultiplication: return this.binaryOperationNode('multiplication', indexOfMultiplication, statementTokens);
+      default: break; // to satisfy eslint
     }
 
     const indexOfExponentiation = this.indexOfExponentiation(statementTokens);
@@ -613,17 +671,27 @@ export default class Syntaxer {
     }
 
     const firstToken = _.first(statementTokens);
-
-    if (firstToken.name === 'minus') {
-      return this.unaryOperationNode('negation', statementTokens);
+    switch (firstToken.name) {
+      case 'minus': return this.unaryOperationNode('negation',       statementTokens);
+      case 'plus':  return this.unaryOperationNode('substantiation', statementTokens);
+      case 'not':   return this.unaryOperationNode('inversion',      statementTokens);
+      default: break; // to satisfy eslint
     }
 
-    if (firstToken.name === 'plus') {
-      return this.unaryOperationNode('substantiation', statementTokens);
+    const indexOfDispatch     = this.indexOfDispatch(statementTokens);
+    const indexOfFunctionCall = this.indexOfFunctionCall(statementTokens);
+    const firstAccessionIndex = _.min(_.without([indexOfDispatch, indexOfFunctionCall], -1));
+    switch (firstAccessionIndex) {
+      case indexOfDispatch:     return this.binaryOperationNode('dispatch', indexOfDispatch, statementTokens);
+      case indexOfFunctionCall: return this.functionCallNode(indexOfFunctionCall, statementTokens);
+      default: break; // to satisfy eslint
     }
 
-    if (firstToken.name === 'not') {
-      return this.unaryOperationNode('inversion', statementTokens);
+    switch (firstToken.name) {
+      case 'openParen':   return this.groupNode('parenGroup',   statementTokens);
+      case 'openBracket': return this.groupNode('bracketGroup', statementTokens);
+      case 'openBrace':   return this.groupNode('braceGroup',   statementTokens);
+      default: break; // to satisfy eslint
     }
 
     const boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(statementTokens);
@@ -631,26 +699,14 @@ export default class Syntaxer {
       return this.functionDefinitionNode(boundsOfFirstFn, statementTokens);
     }
 
-    if (this.isOpenGroupToken(firstToken)) {
-      const groupOperation = {
-        openParen:   'parenGroup',
-        openBracket: 'bracketGroup',
-        openBrace:   'braceGroup',
-      }[firstToken.name];
-
-      return this.groupNode(groupOperation, statementTokens);
-    }
-
     const lastToken = _.last(statementTokens);
-    const startPos  = `L${firstToken.line}/C${firstToken.column}`;
-    const endPos    = `L${lastToken.line}/C${lastToken.column}`;
-    throw `Unrecognized statement between ${startPos} and ${endPos}`;
+    throw errorBetween(firstToken, lastToken, `Unrecognized statement`);
   }
 
   traverse(tokens = this.tokenList, nodes = []) {
     if (_.isEmpty(tokens)) return nodes;
     const firstStatement = this.firstStatementFromTokens(tokens);
-    const firstNode      = this.pemdasTreeFromStatement(firstStatement);
+    const firstNode      = this.pemdasNodeFromStatement(firstStatement);
     nodes.push(firstNode);
     const restOfTokens   = tokens.slice(firstStatement.length);
     return this.traverse(restOfTokens, nodes);

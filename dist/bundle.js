@@ -2170,7 +2170,8 @@ var Syntaxer = function () {
         addition: ['plus'],
         division: ['slash'],
         multiplication: ['star'],
-        exponentiation: ['starStar']
+        exponentiation: ['starStar'],
+        dispatch: ['dot']
       }[operationName];
 
       if (_underscore2.default.isEmpty(operatorNames)) throw 'Invalid operation type \'' + operationName + '\'';
@@ -2282,6 +2283,13 @@ var Syntaxer = function () {
       var validRightTypes = ['word', 'number', 'operator'];
       return this.indexOfBinaryOperation('exponentiation', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
+  }, {
+    key: 'indexOfDispatch',
+    value: function indexOfDispatch(tokens) {
+      var validLeftTypes = ['word', 'number', 'string'];
+      var validRightTypes = ['word'];
+      return this.indexOfBinaryOperation('dispatch', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
 
     // Given a set of tokens, returns the tokens up to the end of the first line (or spanning
     // multiple lines if there are grouping symbols), to the end of the contiguous "statement".
@@ -2366,6 +2374,7 @@ var Syntaxer = function () {
         multiplication: ['star'],
         exponentiation: ['starStar'],
         assignment: ['equals'],
+        dispatch: ['dot'],
         comparison: ['equalTo', 'greaterThan', 'greaterThanOrEqualTo', 'lessThan', 'lessThanOrEqualTo', 'notEqualTo'],
         boolean: ['and', 'or']
       }[operationName];
@@ -2470,7 +2479,6 @@ var Syntaxer = function () {
 
       var colonIndex = this.indexOfFirstFunctionColon(tokens);
       var colonToken = tokens[colonIndex];
-      var twoTokensToTheLeft = tokens[colonIndex - 2];
       var oneTokenToTheLeft = tokens[colonIndex - 1];
       var oneTokenToTheRight = tokens[colonIndex + 1];
       var twoTokensToTheRight = tokens[colonIndex + 2];
@@ -2479,7 +2487,6 @@ var Syntaxer = function () {
       var isPropSetter = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name === 'set';
       var isPropDefault = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name !== 'set';
       var isDeclaration = firstToken.name === 'def';
-      var isAnonymous = firstToken.name === 'openParen';
 
       var spacesAfterColon = oneTokenToTheRight ? oneTokenToTheRight.column - colonToken.column - 1 : 999;
       var isTyped = oneTokenToTheRight.type === 'word' && spacesAfterColon === 0;
@@ -2497,6 +2504,7 @@ var Syntaxer = function () {
         isDeclaration: isDeclaration,
         isPropSetter: isPropSetter,
         isPropDefault: isPropDefault,
+        colonToken: colonToken,
         nameToken: nameToken,
         typeToken: typeToken,
         argumentsNode: this.pemdasTreeFromStatement(argumentsTokens),
@@ -2586,6 +2594,11 @@ var Syntaxer = function () {
       var boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(statementTokens);
       if (boundsOfFirstFn[0] === 0) {
         return this.functionDefinitionNode(boundsOfFirstFn, statementTokens);
+      }
+
+      var indexOfDispatch = this.indexOfDispatch(statementTokens);
+      if (indexOfDispatch !== -1) {
+        return this.binaryOperationNode('dispatch', indexOfDispatch, statementTokens);
       }
 
       if (this.isOpenGroupToken(firstToken)) {
