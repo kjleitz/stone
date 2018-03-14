@@ -1996,6 +1996,26 @@ var Syntaxer = function () {
 
       return _underscore2.default.isEmpty(openStack);
     }
+  }, {
+    key: "findAllBoundsInTokensWith",
+    value: function findAllBoundsInTokensWith(findFirstBoundsInTokensFn, tokens) {
+      var boundsPairs = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : [];
+
+      var previousPair = _underscore2.default.last(boundsPairs);
+      var startIndex = _underscore2.default.isUndefined(previousPair) ? 0 : previousPair[1] + 1;
+      var restOfTokens = tokens.slice(startIndex);
+      if (_underscore2.default.isEmpty(restOfTokens)) return boundsPairs;
+
+      var boundsOfFirstFn = findFirstBoundsInTokensFn(restOfTokens);
+      if (_underscore2.default.isEmpty(boundsOfFirstFn)) return boundsPairs;
+
+      var canonicalBounds = _underscore2.default.map(boundsOfFirstFn, function (boundary) {
+        return boundary + startIndex;
+      });
+      boundsPairs.push(canonicalBounds);
+
+      return this.findAllBoundsInTokensWith(findFirstBoundsInTokensFn, tokens, boundsPairs);
+    }
 
     // Given a set of tokens, returns the indices of the first open grouping symbol and its
     // matching closing symbol... essentially the beginning and end of the first group. Returns
@@ -2039,23 +2059,8 @@ var Syntaxer = function () {
   }, {
     key: "boundsOfAllGroupsInTokens",
     value: function boundsOfAllGroupsInTokens(tokens) {
-      var boundsPairs = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
-
-      if (_underscore2.default.isEmpty(tokens)) return boundsPairs;
-
-      var boundsOfFirstGroup = this.boundsOfFirstGroupInTokens(tokens);
-      if (_underscore2.default.isEmpty(boundsOfFirstGroup)) return boundsPairs;
-
-      var previousPair = _underscore2.default.last(boundsPairs) || [0, 0];
-      var indexOffset = _underscore2.default.last(previousPair);
-      var canonicalPair = _underscore2.default.map(boundsOfFirstGroup, function (boundary) {
-        return boundary + indexOffset;
-      });
-      boundsPairs.push(canonicalPair);
-
-      var closeIndex = boundsOfFirstGroup[1];
-      var restOfTokens = tokens.slice(closeIndex);
-      return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
+      var boundsFinderFn = _underscore2.default.bind(this.boundsOfFirstGroupInTokens, this);
+      return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
     }
   }, {
     key: "indexOfFirstFunctionColon",
@@ -2156,23 +2161,8 @@ var Syntaxer = function () {
   }, {
     key: "boundsOfAllFunctionDefinitionsInTokens",
     value: function boundsOfAllFunctionDefinitionsInTokens(tokens) {
-      var boundsPairs = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
-
-      if (_underscore2.default.isEmpty(tokens)) return boundsPairs;
-
-      var boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(tokens);
-      if (_underscore2.default.isEmpty(boundsOfFirstFn)) return boundsPairs;
-
-      var previousPair = _underscore2.default.last(boundsPairs) || [0, 0];
-      var indexOffset = _underscore2.default.last(previousPair);
-      var canonicalPair = _underscore2.default.map(boundsOfFirstFn, function (boundary) {
-        return boundary + indexOffset;
-      });
-      boundsPairs.push(canonicalPair);
-
-      var closeIndex = boundsOfFirstFn[1];
-      var restOfTokens = tokens.slice(closeIndex);
-      return this.boundsOfAllFunctionDefinitionsInTokens(restOfTokens, boundsPairs);
+      var boundsFinderFn = _underscore2.default.bind(this.boundsOfFirstFunctionDefinitionInTokens, this);
+      return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
     }
   }, {
     key: "indexOfBinaryOperation",
@@ -2194,6 +2184,7 @@ var Syntaxer = function () {
         division: ['slash'],
         multiplication: ['star'],
         exponentiation: ['starStar'],
+        hashPair: ['colon'],
         dispatch: ['dot']
       }[operationName];
 
@@ -2305,6 +2296,30 @@ var Syntaxer = function () {
       var validLeftTypes = ['word', 'number'];
       var validRightTypes = ['word', 'number', 'operator'];
       return this.indexOfBinaryOperation('exponentiation', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+    }
+  }, {
+    key: "indexOfHashColon",
+    value: function indexOfHashColon(tokens) {
+      var validLeftTypes = ['word', 'number', 'string'];
+      var validRightTypes = ['word', 'number', 'string', 'operator'];
+      var indexOfFirstColon = this.indexOfBinaryOperation('hashPair', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+      if (indexOfFirstColon === -1) return -1;
+
+      var tokenBeforeColon = tokens[indexOfFirstColon - 1];
+      if (_underscore2.default.isUndefined(tokenBeforeColon)) return -1;
+
+      var tokenAfterColon = tokens[indexOfFirstColon + 1];
+      if (_underscore2.default.isUndefined(tokenAfterColon)) return -1;
+
+      var firstColonToken = tokens[indexOfFirstColon];
+      var linesBeforeColon = tokenBeforeColon.line - firstColonToken.line;
+      if (linesBeforeColon > 0) return -1;
+
+      var linesAfterColon = tokenAfterColon.line - firstColonToken.line;
+      var spacesAfterColon = tokenAfterColon.column - firstColonToken.column - 1;
+      if (linesAfterColon === 0 && spacesAfterColon === 0) return -1;
+
+      return indexOfFirstColon;
     }
   }, {
     key: "indexOfDispatch",
@@ -2585,6 +2600,31 @@ var Syntaxer = function () {
       };
     }
   }, {
+    key: "hashPairNode",
+    value: function hashPairNode(indexOfHashColon, tokens) {
+      var colonToken = tokens[indexOfHashColon];
+      if (colonToken.name !== 'colon') {
+        throw errorAt(colonToken, 'Expected to find a hash pair colon');
+      }
+
+      var leftTokens = _underscore2.default.first(tokens, indexOfHashColon);
+      if (_underscore2.default.isEmpty(leftTokens)) {
+        throw errorAt(colonToken, 'Found no left-hand side (key) for the hash pair');
+      }
+
+      var rightTokens = tokens.slice(indexOfHashColon + 1);
+      if (_underscore2.default.isEmpty(rightTokens)) {
+        throw errorAt(colonToken, 'Found no right-hand side (value) for the hash pair');
+      }
+
+      return {
+        operation: 'hashPair',
+        token: colonToken,
+        keyNode: this.pemdasNodeFromStatement(leftTokens),
+        valueNode: this.pemdasNodeFromStatement(rightTokens)
+      };
+    }
+  }, {
     key: "pemdasNodeFromStatement",
     value: function pemdasNodeFromStatement(statementTokens) {
       if (_underscore2.default.isEmpty(statementTokens)) {
@@ -2664,6 +2704,11 @@ var Syntaxer = function () {
           return this.unaryOperationNode('inversion', statementTokens);
         default:
           break; // to satisfy eslint
+      }
+
+      var indexOfHashColon = this.indexOfHashColon(statementTokens);
+      if (indexOfHashColon !== -1) {
+        return this.hashPairNode(indexOfHashColon, statementTokens);
       }
 
       var boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(statementTokens);

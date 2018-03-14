@@ -69,6 +69,21 @@ export default class Syntaxer {
     return _.isEmpty(openStack);
   }
 
+  findAllBoundsInTokensWith(findFirstBoundsInTokensFn, tokens, boundsPairs = []) {
+    const previousPair = _.last(boundsPairs);
+    const startIndex   = _.isUndefined(previousPair) ? 0 : previousPair[1] + 1;
+    const restOfTokens = tokens.slice(startIndex);
+    if (_.isEmpty(restOfTokens))    return boundsPairs;
+
+    const boundsOfFirstFn = findFirstBoundsInTokensFn(restOfTokens);
+    if (_.isEmpty(boundsOfFirstFn)) return boundsPairs;
+
+    const canonicalBounds = _.map(boundsOfFirstFn, boundary => boundary + startIndex);
+    boundsPairs.push(canonicalBounds);
+
+    return this.findAllBoundsInTokensWith(findFirstBoundsInTokensFn, tokens, boundsPairs);
+  }
+
   // Given a set of tokens, returns the indices of the first open grouping symbol and its
   // matching closing symbol... essentially the beginning and end of the first group. Returns
   // an array: [] if there are no groups, or [openSymbolIndex, closeSymbolIndex] otherwise.
@@ -102,20 +117,9 @@ export default class Syntaxer {
     return [openIndex, closeIndex];
   }
 
-  boundsOfAllGroupsInTokens(tokens, boundsPairs = []) {
-    if (_.isEmpty(tokens)) return boundsPairs;
-
-    const boundsOfFirstGroup = this.boundsOfFirstGroupInTokens(tokens);
-    if (_.isEmpty(boundsOfFirstGroup)) return boundsPairs;
-
-    const previousPair  = _.last(boundsPairs) || [0, 0];
-    const indexOffset   = _.last(previousPair);
-    const canonicalPair = _.map(boundsOfFirstGroup, boundary => boundary + indexOffset);
-    boundsPairs.push(canonicalPair);
-
-    const closeIndex   = boundsOfFirstGroup[1];
-    const restOfTokens = tokens.slice(closeIndex);
-    return this.boundsOfAllGroupsInTokens(restOfTokens, boundsPairs);
+  boundsOfAllGroupsInTokens(tokens) {
+    const boundsFinderFn = _.bind(this.boundsOfFirstGroupInTokens, this);
+    return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
   }
 
   indexOfFirstFunctionColon(tokens) {
@@ -210,20 +214,9 @@ export default class Syntaxer {
     return [startIndex, endIndex];
   }
 
-  boundsOfAllFunctionDefinitionsInTokens(tokens, boundsPairs = []) {
-    if (_.isEmpty(tokens)) return boundsPairs;
-
-    const boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(tokens);
-    if (_.isEmpty(boundsOfFirstFn)) return boundsPairs;
-
-    const previousPair  = _.last(boundsPairs) || [0, 0];
-    const indexOffset   = _.last(previousPair);
-    const canonicalPair = _.map(boundsOfFirstFn, boundary => boundary + indexOffset);
-    boundsPairs.push(canonicalPair);
-
-    const closeIndex   = boundsOfFirstFn[1];
-    const restOfTokens = tokens.slice(closeIndex);
-    return this.boundsOfAllFunctionDefinitionsInTokens(restOfTokens, boundsPairs);
+  boundsOfAllFunctionDefinitionsInTokens(tokens) {
+    const boundsFinderFn = _.bind(this.boundsOfFirstFunctionDefinitionInTokens, this);
+    return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
   }
 
   indexOfBinaryOperation(operationName, tokens, { validLeftTypes, validRightTypes }) {
@@ -239,6 +232,7 @@ export default class Syntaxer {
       division:               ['slash'],
       multiplication:         ['star'],
       exponentiation:         ['starStar'],
+      hashPair:               ['colon'],
       dispatch:               ['dot'],
     }[operationName];
 
@@ -346,6 +340,29 @@ export default class Syntaxer {
     const validLeftTypes  = ['word', 'number'];
     const validRightTypes = ['word', 'number', 'operator'];
     return this.indexOfBinaryOperation('exponentiation', tokens, { validLeftTypes, validRightTypes });
+  }
+
+  indexOfHashColon(tokens) {
+    const validLeftTypes    = ['word', 'number', 'string'];
+    const validRightTypes   = ['word', 'number', 'string', 'operator'];
+    const indexOfFirstColon = this.indexOfBinaryOperation('hashPair', tokens, { validLeftTypes, validRightTypes })
+    if (indexOfFirstColon === -1) return -1;
+
+    const tokenBeforeColon = tokens[indexOfFirstColon - 1];
+    if (_.isUndefined(tokenBeforeColon)) return -1;
+
+    const tokenAfterColon = tokens[indexOfFirstColon + 1];
+    if (_.isUndefined(tokenAfterColon)) return -1;
+
+    const firstColonToken   = tokens[indexOfFirstColon];
+    const linesBeforeColon  = tokenBeforeColon.line - firstColonToken.line;
+    if (linesBeforeColon > 0) return -1;
+
+    const linesAfterColon  = tokenAfterColon.line   - firstColonToken.line;
+    const spacesAfterColon = tokenAfterColon.column - firstColonToken.column - 1;
+    if (linesAfterColon === 0 && spacesAfterColon === 0) return -1;
+
+    return indexOfFirstColon;
   }
 
   indexOfDispatch(tokens) {
@@ -616,6 +633,30 @@ export default class Syntaxer {
     };
   }
 
+  hashPairNode(indexOfHashColon, tokens) {
+    const colonToken = tokens[indexOfHashColon];
+    if (colonToken.name !== 'colon') {
+      throw errorAt(colonToken, 'Expected to find a hash pair colon');
+    }
+
+    const leftTokens = _.first(tokens, indexOfHashColon);
+    if (_.isEmpty(leftTokens)) {
+      throw errorAt(colonToken, 'Found no left-hand side (key) for the hash pair');
+    }
+
+    const rightTokens = tokens.slice(indexOfHashColon + 1);
+    if (_.isEmpty(rightTokens)) {
+      throw errorAt(colonToken, 'Found no right-hand side (value) for the hash pair');
+    }
+
+    return {
+      operation: 'hashPair',
+      token:     colonToken,
+      keyNode:   this.pemdasNodeFromStatement(leftTokens),
+      valueNode: this.pemdasNodeFromStatement(rightTokens),
+    };
+  }
+
   pemdasNodeFromStatement(statementTokens) {
     if (_.isEmpty(statementTokens)) {
       return null;
@@ -684,6 +725,11 @@ export default class Syntaxer {
       case 'plus':  return this.unaryOperationNode('substantiation', statementTokens);
       case 'not':   return this.unaryOperationNode('inversion',      statementTokens);
       default: break; // to satisfy eslint
+    }
+
+    const indexOfHashColon = this.indexOfHashColon(statementTokens);
+    if (indexOfHashColon !== -1) {
+      return this.hashPairNode(indexOfHashColon, statementTokens);
     }
 
     const boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(statementTokens);

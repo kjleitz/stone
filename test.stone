@@ -20,3 +20,34 @@ add = (n, m):Num
 # returns null (return type is null if not specified)
 log_1 = (msg):
   console.log(msg)
+
+# returns 0 (coerces return value to Num, i.e., undefined => 0)
+log_2 = (msg):Num
+  console.log(msg)
+
+# the return value of a function is coerced to the return type
+to_num = (foo):Num foo
+to_num(true)     #=> 1
+to_num(false)    #=> 0
+to_num(0)        #=> 0
+to_num('')       #=> 0
+to_num([])       #=> 0
+to_num({})       #=> 0
+to_num(['2', 3]) #=> 0 # this...
+to_num(['2'])    #=> 2 # ...and this are silly. avoid this JS quirk in the future.
+
+# if the return value has a "to_#{return type downcased}" method, it's called in
+# order to coerce that value
+foo.to_string()           #=> "foo"
+to_str = (bar):String bar
+to_str(foo)               #=> "foo"
+
+
+# CLASSES
+
+# initialize an instance of a class (a prototype; see the definition below) like this:
+Dog.with({
+  name:   'my boy',
+  breed:  'husky',
+  gender: 'male'
+})

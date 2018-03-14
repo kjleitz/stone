@@ -42,8 +42,8 @@ to_str(foo)               #=> "foo"
 
 # initialize an instance of a class (a prototype; see the definition below) like this:
 Dog.with({
-  name:   'my boy'
-  breed:  'husky'
+  name:   'my boy',
+  breed:  'husky',
   gender: 'male'
 })
 
