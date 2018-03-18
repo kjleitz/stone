@@ -1614,7 +1614,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 var TOKEN = {
-  types: ['whitespace', 'comment', 'word', 'string', 'number', 'operator', 'grouping', 'delimiter'],
+  types: ['whitespace', 'comment', 'word', 'string', 'number', 'regex', 'operator', 'grouping', 'delimiter'],
 
   ignorableTypes: ['whitespace', 'comment'],
 
@@ -1704,6 +1704,7 @@ var TOKEN = {
     word: /[_A-Za-z]/,
     string: /['"]/,
     number: /[\d.]/, // no negative; leading "-" will be unary operator
+    regex: /\//,
     operator: /[-+*/=<>!&|%~$^:.]/,
     grouping: /[[\](){}]/,
     delimiter: /,/
@@ -1716,7 +1717,7 @@ var TOKEN = {
 
     // octothorpe, (anything)*, end of line
     // => literal as-is; to be ignored
-    comment: /^#.*?[\n$]/,
+    comment: /^#.*?(\n|$)/,
 
     // (underscore || letter), (word character)*
     // => match predefined set of key words, or variable as-is
@@ -1741,7 +1742,22 @@ var TOKEN = {
 
     // (comma || colon)
     // literal as-is
-    delimiter: /^,/
+    delimiter: /^,/,
+
+    // I apologize in advance for this monstrosity:
+    // (adapted from https://stackoverflow.com/questions/17843691/javascript-regex-to-match-a-regex/17843773#17843773)
+    // 1. \/           -- starting slash
+    // 2. (?:          -- a group of...
+    //   a. [^[/\\]      -- anything but (open bracket || slash || backslash), OR
+    //   b. \\.          -- any escaped char, OR
+    //   c. \[(?:        -- within brackets...
+    //     i.  [^\]\\]     -- anything but (closing bracket || backslash), OR
+    //     ii. \\.         -- any escaped char
+    //   )*\]            -- ...any number of times before the closing bracket
+    // )*              -- ...any number of times
+    // 3. \/           -- closing slash
+    // 4. [gimuy]{0,5} -- 0-5 flags
+    regex: /^\/(?:[^[/\\]|\\.|\[(?:[^\]\\]|\\.)*\])*\/[gimuy]{0,5}/
   },
 
   typeIsSignificant: function typeIsSignificant(tokenType) {
@@ -2283,22 +2299,22 @@ var Syntaxer = function () {
   }, {
     key: "indexOfComparisonOperation",
     value: function indexOfComparisonOperation(operationName, tokens) {
-      var validLeftTypes = ['word', 'string', 'number'];
-      var validRightTypes = ['word', 'string', 'number', 'operator'];
+      var validLeftTypes = ['word', 'string', 'number', 'regex'];
+      var validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
       return this.indexOfBinaryOperation(operationName, tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
     key: "indexOfAssignment",
     value: function indexOfAssignment(tokens) {
       var validLeftTypes = ['word'];
-      var validRightTypes = ['word', 'number', 'string', 'operator'];
+      var validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
       return this.indexOfBinaryOperation('assignment', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
     key: "indexOfSequence",
     value: function indexOfSequence(tokens) {
-      var validLeftTypes = ['word', 'string', 'number'];
-      var validRightTypes = ['word', 'string', 'number', 'operator'];
+      var validLeftTypes = ['word', 'string', 'number', 'regex'];
+      var validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
       return this.indexOfBinaryOperation('sequence', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
@@ -2325,7 +2341,7 @@ var Syntaxer = function () {
     key: "indexOfSubtraction",
     value: function indexOfSubtraction(tokens) {
       var validLeftTypes = ['word', 'number', 'string'];
-      var validRightTypes = ['word', 'number', 'string', 'operator'];
+      var validRightTypes = ['word', 'number', 'string', 'regex', 'operator'];
       return this.indexOfBinaryOperation('subtraction', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
@@ -2339,7 +2355,7 @@ var Syntaxer = function () {
     key: "indexOfDivision",
     value: function indexOfDivision(tokens) {
       var validLeftTypes = ['word', 'number'];
-      var validRightTypes = ['word', 'number', 'operator'];
+      var validRightTypes = ['word', 'number', 'regex', 'operator'];
       return this.indexOfBinaryOperation('division', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
   }, {
@@ -2359,8 +2375,8 @@ var Syntaxer = function () {
   }, {
     key: "indexOfHashColon",
     value: function indexOfHashColon(tokens) {
-      var validLeftTypes = ['word', 'number', 'string'];
-      var validRightTypes = ['word', 'number', 'string', 'operator'];
+      var validLeftTypes = ['word', 'number', 'string', 'regex'];
+      var validRightTypes = ['word', 'number', 'string', 'regex', 'operator'];
       var indexOfFirstColon = this.indexOfBinaryOperation('hashPair', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
       if (indexOfFirstColon === -1) return -1;
 
@@ -2383,7 +2399,7 @@ var Syntaxer = function () {
   }, {
     key: "indexOfDispatch",
     value: function indexOfDispatch(tokens) {
-      var validLeftTypes = ['word', 'number', 'string'];
+      var validLeftTypes = ['word', 'number', 'string', 'regex'];
       var validRightTypes = ['word'];
       return this.indexOfBinaryOperation('dispatch', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
     }
@@ -2456,7 +2472,7 @@ var Syntaxer = function () {
   }, {
     key: "identityNode",
     value: function identityNode(token) {
-      var validIdentityTypes = ['word', 'string', 'number'];
+      var validIdentityTypes = ['word', 'string', 'number', 'regex'];
       if (!_underscore2.default.contains(validIdentityTypes, token.type)) {
         throw errorAt(token, 'Expected to find valid identity token');
       }
@@ -2903,6 +2919,12 @@ var Syntaxer = function () {
       };
     }
   }, {
+    key: "regexNode",
+    value: function regexNode(tokens) {
+      var openSlash = tokens[0];
+      if (openSlash.name !== 'slash') throw errorAt(openSlash, 'Expected regex to begin');
+    }
+  }, {
     key: "pemdasNodeFromStatement",
     value: function pemdasNodeFromStatement(statementTokens) {
       if (_underscore2.default.isEmpty(statementTokens)) {
@@ -2980,6 +3002,12 @@ var Syntaxer = function () {
           return this.unaryOperationNode('substantiation', statementTokens);
         case 'not':
           return this.unaryOperationNode('inversion', statementTokens);
+        case 'proto':
+          return this.protoDefinitionNode(statementTokens);
+        case 'check':
+          return this.checkNode(statementTokens);
+        case 'guard':
+          return this.guardNode(statementTokens);
         default:
           break; // to satisfy eslint
       }
@@ -3007,8 +3035,6 @@ var Syntaxer = function () {
           break; // to satisfy eslint
       }
 
-      if (firstToken.name === 'proto') return this.protoDefinitionNode(statementTokens);
-
       var indexOfDispatch = this.indexOfDispatch(statementTokens);
       var indexOfFunctionCall = this.indexOfFunctionCall(statementTokens);
       var firstAccessionIndex = _underscore2.default.min(_underscore2.default.without([indexOfDispatch, indexOfFunctionCall], -1));
@@ -3028,6 +3054,8 @@ var Syntaxer = function () {
           return this.groupNode('bracketGroup', statementTokens);
         case 'openBrace':
           return this.groupNode('braceGroup', statementTokens);
+        case 'slash':
+          return this.regexNode(statementTokens);
         default:
           break; // to satisfy eslint
       }

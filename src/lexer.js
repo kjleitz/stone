@@ -7,6 +7,7 @@ const TOKEN = {
     'word',
     'string',
     'number',
+    'regex',
     'operator',
     'grouping',
     'delimiter',
@@ -103,6 +104,7 @@ const TOKEN = {
     word:       /[_A-Za-z]/,
     string:     /['"]/,
     number:     /[\d.]/, // no negative; leading "-" will be unary operator
+    regex:      /\//,
     operator:   /[-+*/=<>!&|%~$^:.]/,
     grouping:   /[[\](){}]/,
     delimiter:  /,/,
@@ -115,7 +117,7 @@ const TOKEN = {
 
     // octothorpe, (anything)*, end of line
     // => literal as-is; to be ignored
-    comment: /^#.*?[\n$]/,
+    comment: /^#.*?(\n|$)/,
 
     // (underscore || letter), (word character)*
     // => match predefined set of key words, or variable as-is
@@ -141,6 +143,21 @@ const TOKEN = {
     // (comma || colon)
     // literal as-is
     delimiter: /^,/,
+
+    // I apologize in advance for this monstrosity:
+    // (adapted from https://stackoverflow.com/questions/17843691/javascript-regex-to-match-a-regex/17843773#17843773)
+    // 1. \/           -- starting slash
+    // 2. (?:          -- a group of...
+    //   a. [^[/\\]      -- anything but (open bracket || slash || backslash), OR
+    //   b. \\.          -- any escaped char, OR
+    //   c. \[(?:        -- within brackets...
+    //     i.  [^\]\\]     -- anything but (closing bracket || backslash), OR
+    //     ii. \\.         -- any escaped char
+    //   )*\]            -- ...any number of times before the closing bracket
+    // )*              -- ...any number of times
+    // 3. \/           -- closing slash
+    // 4. [gimuy]{0,5} -- 0-5 flags
+    regex: /^\/(?:[^[/\\]|\\.|\[(?:[^\]\\]|\\.)*\])*\/[gimuy]{0,5}/,
   },
 
   typeIsSignificant(tokenType) {

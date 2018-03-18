@@ -330,20 +330,20 @@ export default class Syntaxer {
   }
 
   indexOfComparisonOperation(operationName, tokens) {
-    const validLeftTypes  = ['word', 'string', 'number'];
-    const validRightTypes = ['word', 'string', 'number', 'operator'];
+    const validLeftTypes  = ['word', 'string', 'number', 'regex'];
+    const validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
     return this.indexOfBinaryOperation(operationName, tokens, { validLeftTypes, validRightTypes });
   }
 
   indexOfAssignment(tokens) {
     const validLeftTypes  = ['word'];
-    const validRightTypes = ['word', 'number', 'string', 'operator'];
+    const validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
     return this.indexOfBinaryOperation('assignment', tokens, { validLeftTypes, validRightTypes });
   }
 
   indexOfSequence(tokens) {
-    const validLeftTypes  = ['word', 'string', 'number'];
-    const validRightTypes = ['word', 'string', 'number', 'operator'];
+    const validLeftTypes  = ['word', 'string', 'number', 'regex'];
+    const validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
     return this.indexOfBinaryOperation('sequence', tokens, { validLeftTypes, validRightTypes });
   }
 
@@ -365,7 +365,7 @@ export default class Syntaxer {
 
   indexOfSubtraction(tokens) {
     const validLeftTypes  = ['word', 'number', 'string'];
-    const validRightTypes = ['word', 'number', 'string', 'operator'];
+    const validRightTypes = ['word', 'number', 'string', 'regex', 'operator'];
     return this.indexOfBinaryOperation('subtraction', tokens, { validLeftTypes, validRightTypes });
   }
 
@@ -377,7 +377,7 @@ export default class Syntaxer {
 
   indexOfDivision(tokens) {
     const validLeftTypes  = ['word', 'number'];
-    const validRightTypes = ['word', 'number', 'operator'];
+    const validRightTypes = ['word', 'number', 'regex', 'operator'];
     return this.indexOfBinaryOperation('division', tokens, { validLeftTypes, validRightTypes });
   }
 
@@ -394,8 +394,8 @@ export default class Syntaxer {
   }
 
   indexOfHashColon(tokens) {
-    const validLeftTypes    = ['word', 'number', 'string'];
-    const validRightTypes   = ['word', 'number', 'string', 'operator'];
+    const validLeftTypes    = ['word', 'number', 'string', 'regex'];
+    const validRightTypes   = ['word', 'number', 'string', 'regex', 'operator'];
     const indexOfFirstColon = this.indexOfBinaryOperation('hashPair', tokens, { validLeftTypes, validRightTypes })
     if (indexOfFirstColon === -1) return -1;
 
@@ -417,7 +417,7 @@ export default class Syntaxer {
   }
 
   indexOfDispatch(tokens) {
-    const validLeftTypes  = ['word', 'number', 'string'];
+    const validLeftTypes  = ['word', 'number', 'string', 'regex'];
     const validRightTypes = ['word'];
     return this.indexOfBinaryOperation('dispatch', tokens, { validLeftTypes, validRightTypes });
   }
@@ -481,7 +481,7 @@ export default class Syntaxer {
   }
 
   identityNode(token) {
-    const validIdentityTypes = ['word', 'string', 'number'];
+    const validIdentityTypes = ['word', 'string', 'number', 'regex'];
     if (!_.contains(validIdentityTypes, token.type)) {
       throw errorAt(token, 'Expected to find valid identity token');
     }
@@ -895,6 +895,11 @@ export default class Syntaxer {
     };
   }
 
+  regexNode(tokens) {
+    const openSlash = tokens[0];
+    if (openSlash.name !== 'slash') throw errorAt(openSlash, 'Expected regex to begin');
+  }
+
   pemdasNodeFromStatement(statementTokens) {
     if (_.isEmpty(statementTokens)) {
       return null;
@@ -962,6 +967,9 @@ export default class Syntaxer {
       case 'minus': return this.unaryOperationNode('negation',       statementTokens);
       case 'plus':  return this.unaryOperationNode('substantiation', statementTokens);
       case 'not':   return this.unaryOperationNode('inversion',      statementTokens);
+      case 'proto': return this.protoDefinitionNode(statementTokens);
+      case 'check': return this.checkNode(statementTokens);
+      case 'guard': return this.guardNode(statementTokens);
       default: break; // to satisfy eslint
     }
 
@@ -983,8 +991,6 @@ export default class Syntaxer {
       default: break; // to satisfy eslint
     }
 
-    if (firstToken.name === 'proto') return this.protoDefinitionNode(statementTokens);
-
     const indexOfDispatch     = this.indexOfDispatch(statementTokens);
     const indexOfFunctionCall = this.indexOfFunctionCall(statementTokens);
     const firstAccessionIndex = _.min(_.without([indexOfDispatch, indexOfFunctionCall], -1));
@@ -998,6 +1004,7 @@ export default class Syntaxer {
       case 'openParen':   return this.groupNode('parenGroup',   statementTokens);
       case 'openBracket': return this.groupNode('bracketGroup', statementTokens);
       case 'openBrace':   return this.groupNode('braceGroup',   statementTokens);
+      case 'slash':       return this.regexNode(statementTokens);
       default: break; // to satisfy eslint
     }
 

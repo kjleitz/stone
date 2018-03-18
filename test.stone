@@ -2,6 +2,7 @@ foo = 1 + 2
 bar = 1 + -2
 baz = 10 < 20
 xyz = !baz
+operator_matcher = /^[-+*/=<>!&|%~$^:.]+/g
 
 # FUNCTIONS
 
@@ -137,10 +138,76 @@ proto Cat from Pet shaped {
     "#{sound} #{sound}... #{sound}!"
 }
 
-# # bind a function at definition with <context> before the arguments
-# proto Human shaped {
-#   name:Str
-# } extends {
-#   def say_my_name<this>():Str
-#     this.name
-# }
+#default_to_crap = true
+#foo = 'blah'
+#
+## A `check` with no arg is equivalent to a `check` with an arg of `true`.
+## You can use this as an arbitrary "if-elseif-else" block. Anything on the
+## left-hand side that evaluates to `true` will execute the right-hand side
+## and then break. If there are no matches, the right-hand side of `_>` will
+## be evaluated (as the "default")
+#bar = check
+#  foo.is_string() => foo
+#  foo.is_num()    => foo.to_string()
+#  foo == 'yes'    => 'aye'
+#  default_to_crap => 'crap'
+#  _> 'default'
+#
+#bar
+##=> 'blah'
+#
+## A `check` with an arg evaluates the left-hand expressions like this:
+##   - if there is a `?` then it interpolates `bar` there, and it will match
+##     only if the expression evaluates to `true`
+##   - if there is no `?` then it will match against the value of `bar`, using
+##     `bar`'s method `match`, which falls back to `==` if it's not explicitly
+##     defined on the callee (an example of the advantage of `match` over `==`
+##     here would be checking against regular expressions)
+#baz = check (bar)
+#  'crap'       => 'I am crap!'
+#  'blah'       => 'I am blah!'
+#  '1'          => 'I am the number 1!'
+#  '2'          => 'I am the number 2!'
+#  ?.match('2') => 'does the same as the one above!'
+#  /^[3-9]$/    => 'I am under ten!'
+#  ?.to_num() >= 10 => 'I am ten or higher!'
+#  default_to_crap  => 'bar is equal to `true`? that doesn't seem right.'
+#  _> "hm. maybe I'm 'default'?"
+#
+## lookin' for crap
+#guard
+#  baz.is_string() => console.log("baz couldn't possibly be 'crap'")
+#  baz.length == 4 => console.log("baz isn't the right size to be 'crap'")
+#  baz.match(/ra/) => console.log("baz doesn't have letters that are in 'crap'")
+#  _> console.log("baz could possibly be 'crap'")
+#
+## lookin' for crap again
+#guard (baz)
+#  ?.is_string() => console.log("baz couldn't possibly be 'crap'")
+#  ?.length == 4 => console.log("baz isn't the right size to be 'crap'")
+#  /ra/          => console.log("baz doesn't have letters that are in 'crap'")
+#  _> console.log("baz could possibly be 'crap'")
+#
+#def exclaim_about(something):
+#  guard something.is_present() => return
+#  console.log("this is a SUBSTANTIAL #{something}, isn't it???")
+#
+#exclaim_about(null)
+## prints nothing
+#exclaim_about({ foo: 'bar' })
+## prints "this is a SUBSTANTIAL { foo: 'bar' }, isn't it???"
+#
+## equivalent to the following (but these are much uglier/not immediately obvious what's going on):
+#
+#def exclaim_about(something):
+#  guard (something) ?.is_present() => return
+#  console.log("this is a SUBSTANTIAL #{something}, isn't it???")
+#
+#def exclaim_about(something):
+#  check !something.is_present() => return
+#  console.log("this is a SUBSTANTIAL #{something}, isn't it???")
+#
+#def exclaim_about(something):
+#  check (something) !?.is_present() => return
+#  console.log("this is a SUBSTANTIAL #{something}, isn't it???")
+#
