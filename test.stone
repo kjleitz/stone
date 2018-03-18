@@ -51,3 +51,96 @@ Dog.with({
   breed:  'husky',
   gender: 'male'
 })
+
+# define a prototype like this
+proto Pet shaped { # shape: define props and their types (props are constants post-init)
+  # default value is the empty val for that type (so, here, it's: '')
+  breed:Str
+
+  # define a setter/transformation for a property; called with a param for the
+  # prop when it's initialized, prop is set to the return val
+  name:Str set
+    names = name.split(' ')
+    proper_names = names.map((nom):Str nom.capitalize())
+    proper_names.join(' ')
+
+  gender:Str                          # default val: ''
+  age:Num                             # default val: 0
+  temper:Str 'friendly'               # this would define a default value (overridden if one is provided on init)
+  temper:Str set temper || 'friendly' # this would do the same as the line above
+  temper:Str set 'friendly'           # this syntax would override any prop given and only ever set it to 'friendly'
+
+  # you can define functions here like always if you need to make helpers or
+  # or separate concerns, etc. (functions here are not public)
+  properize_name = (name):Str
+    names = name.split(' ')
+    proper_names = names.map((nom):Str nom.capitalize())
+    proper_names.join(' ')
+
+  # this will do the same thing, ultimately, as the in-place 'name' setter block above
+  name:Str set properize_name(name)
+
+} extends { # body: do everything else, define methods, etc.
+
+  def beg(food):Str "gimme some #{food}"
+
+  def tag():Str
+    description = "#{name}, a #{gender} #{breed}"
+    misc_details = "(I'm #{age} years young, and very #{temper}!)"
+    [description, misc_details].join("\n")
+
+  def foo(): null # function declarations are public (and hoisted, btw)
+  foo = (): null  # function expressions are private (and not hoisted)
+}
+
+# extend a prototype
+proto Dog from Pet shaped {
+  temper:Str     'loyal'   # props which exist on Pet already must match super's type
+  ear_type:Str   'floppy'  # new props can be defined with whatever type you want
+  bark_sound:Str 'woof'
+} extends {
+  def bark(sound = bark_sound):Str
+    "#{sound}, #{sound}"
+
+  def tag():Str
+    super() + "\n(a dog)"
+}
+
+# the "constructor" of a class is pre-built with the props and prop setters (defined
+# in the shape), and you pass the initial state values in a hash when you instantiate
+# the object... if you need to perform some actions when the object is initialized,
+# beyond the prop setting behavior specified by the shape, you can do that stuff by
+# defining some callbacks called before_init and after_init.
+# an after_init
+proto Cat from Pet shaped {
+  temper:Str     'aloof'
+  meow_sound:Str 'meow'
+} extends {
+
+  # before_init must return an object/hash, and takes the "shape" hash passed to
+  # the class on instantiation as an argument. The return value "replaces" the
+  # shape hash passed to it initially, becoming the source of data used in the
+  # shape block of props and setters. It has access to the context via `this`
+  # but it's basically just an empty object at this stage
+  def before_init(shape):Obj
+    shape.layer({ meow_sound: shape.meow_sound.upcase() })
+
+  # after_init doesn't have a return value. It has access to the newly initialized
+  # object via `this`, but can't _set_ any properties on the object (since they're
+  # immutable). So, this callback would mainly be used for exerting side effects
+  # (maybe emitting signals/logging/triggering events, etc.)
+  def after_init():
+    # prints "MEOW MEOW... MEOW!" by default in this example class
+    console.log(this.meow())
+
+  def meow(sound = meow_sound):Str
+    "#{sound} #{sound}... #{sound}!"
+}
+
+# # bind a function at definition with <context> before the arguments
+# proto Human shaped {
+#   name:Str
+# } extends {
+#   def say_my_name<this>():Str
+#     this.name
+# }

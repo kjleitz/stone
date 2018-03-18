@@ -33,10 +33,11 @@ export default class Syntaxer {
 
   isCloseGroupToken(token) {
     if (token.type !== 'grouping') return false;
-    return _.contains(['openParen', 'openBracket', 'openBrace'], token.name);
+    return _.contains(['closeParen', 'closeBracket', 'closeBrace'], token.name);
   }
 
   openTokenMatchesCloser(openToken, closeToken) {
+    if (_.isUndefined(openToken) || _.isUndefined(closeToken))           return false;
     if (openToken.type !== 'grouping' || closeToken.type !== 'grouping') return false;
     const validCloserFor = { '(': ')', '[': ']', '{': '}' };
     const validOpeners   = _.keys(validCloserFor);
@@ -60,10 +61,7 @@ export default class Syntaxer {
 
       if (this.openTokenMatchesCloser(_.last(openStack), token)) {
         openStack.pop();
-        return;
       }
-
-      throw errorAt(token, 'Grouping mismatch');
     });
 
     return _.isEmpty(openStack);
@@ -124,13 +122,18 @@ export default class Syntaxer {
 
   indexOfFirstFunctionColon(tokens) {
     return _.findIndex(tokens, (token, index) => {
-      if (token.name !== 'colon')          return false;
+      if (token.name !== 'colon')                         return false;
 
       // regular function definitions MUST provide an argument group to the left
       // of the colon, and prop setter functions MUST provide a prop name to the
       // left of the colon, so if nothing's to the left, it's not a function
       const leftToken = tokens[index - 1];
-      if (_.isUndefined(leftToken))        return false;
+      if (_.isUndefined(leftToken))                       return false;
+
+
+      const linesBeforeColon   = this.linesBetween(token, leftToken);
+      const columnsBeforeColon = this.columnsBetween(token, leftToken);
+      if (linesBeforeColon > 0 || columnsBeforeColon > 0) return false;
 
       // for regular function definitions, e.g.,
       //   def foo(a, b):Str "#{a} foos #{b}!"   # hoisted, returns a string
@@ -140,7 +143,7 @@ export default class Syntaxer {
 
       // if it provides an argument group before the colon, it's valid, and it
       // allows anything to follow (no-op is also valid)
-      if (leftToken.name === 'closeParen') return true;
+      if (leftToken.name === 'closeParen')                return true;
 
       // for prop setter definitions within proto shape body, e.g.,
       //   breed:Str set "#{breed} is da best!"  # explicit setter; prop name is passed as implicit argument
@@ -150,72 +153,117 @@ export default class Syntaxer {
       // prop setter definitions MUST provide a non-null return type to the
       // right of the colon
       const rightToken = tokens[index + 1];
-      if (_.isUndefined(rightToken))      return false;
-      if (rightToken.type !== 'word')     return false;
+      if (_.isUndefined(rightToken))                      return false;
+      if (rightToken.type !== 'word')                     return false;
 
       // the return type must be DIRECTLY after the colon (in hashes there MUST
       // be a space after the colon, to differentiate them from return types)
-      const spacesAfterColon = rightToken.column - token.column - 1;
-      return spacesAfterColon === 0;
+      const linesAfterColon   = this.linesBetween(token, rightToken);
+      const columnsAfterColon = this.columnsBetween(token, rightToken);
+      if (linesAfterColon > 0 || columnsAfterColon > 0)   return false;
+
+      return true;
     });
   }
 
   boundsOfFirstFunctionDefinitionInTokens(tokens) {
     const colonIndex = this.indexOfFirstFunctionColon(tokens);
-    if (colonIndex < 0) return [];
+    if (colonIndex === -1) return [];
 
-    const colonToken        = tokens[colonIndex];
-    const tokensBeforeColon = _.first(tokens, colonIndex);
-    const functionIsRegular = _.last(tokensBeforeColon).name === 'closeParen';
-    const argGroupOpenIndex = _.findLastIndex(tokensBeforeColon, (token, index) => {
-      if (!functionIsRegular)         return true;
-      if (token.name !== 'openParen') return false;
+    const colonToken = tokens[colonIndex];
 
-      const currentTokens = tokensBeforeColon.slice(index, colonIndex);
-      return this.hasBalancedGrouping(currentTokens);
-    });
-
-    const tokensBeforeArgs     = _.first(tokensBeforeColon, argGroupOpenIndex);
-    const tokenRightBeforeArgs = _.last(tokensBeforeArgs);
-    const functionIsAnonymous  = _.isUndefined(tokenRightBeforeArgs) || tokenRightBeforeArgs.name !== 'identifier';
-
-    if (functionIsAnonymous && !functionIsRegular) {
-      throw errorAt(colonToken, 'No argument group given for anonymous function');
-    }
-
-    if (functionIsAnonymous && tokenRightBeforeArgs && tokenRightBeforeArgs.name === 'def') {
-      throw errorAt(colonToken, 'No name given for declared function');
-    }
-
-    const nameIndex     = argGroupOpenIndex - 1;
-    const defIndex      = argGroupOpenIndex - 2;
-    const defToken      = tokens[defIndex];
-    const isDeclaration = defToken && defToken.name === 'def';
-
-    const startIndex    = functionIsAnonymous ? argGroupOpenIndex : isDeclaration ? defIndex : nameIndex;
-    const endIndex      = _.findIndex(tokens, (currentToken, index) => {
-      if (index <= colonIndex)                      return false;
+    const stopIndex  = _.findIndex(tokens, (currentToken, index) => {
+      if (index < colonIndex)                       return false;
 
       const nextToken = tokens[index + 1];
       if (_.isUndefined(nextToken))                 return true;
-      if (nextToken.line === currentToken.line)     return false;
 
-      const currentTokens = _.first(tokens, index + 1);
+      const currentTokens = tokens.slice(colonIndex, index + 1);
       if (!this.hasBalancedGrouping(currentTokens)) return false;
+      if (nextToken.line === currentToken.line)     return false;
       if (nextToken.indent > colonToken.indent)     return false;
 
       return true;
     });
 
-    if (endIndex < 0) {
-      throw errorAt(tokens[startIndex], 'Could not close function');
+    if (tokens[colonIndex - 1].name !== 'closeParen') {
+      return [colonIndex - 1, stopIndex]; // it's a prop definition
     }
 
-    return [startIndex, endIndex];
+    const tokensBeforeColon = _.first(tokens, colonIndex);
+    const argOpenIndex      = _.findLastIndex(tokensBeforeColon, (token, index) => {
+      if (token.name !== 'openParen') return false;
+      const currentTokens = tokensBeforeColon.slice(index);
+      return this.hasBalancedGrouping(currentTokens);
+    });
+
+    const nameToken      = tokens[argOpenIndex - 1];
+    const defToken       = tokens[argOpenIndex - 2];
+    const isDeclaration  = !!defToken && !!nameToken && defToken.name === 'def' && nameToken.name === 'identifier';
+    if (!isDeclaration) {
+      return [argOpenIndex, stopIndex]; // it's anonymous
+    }
+
+    return [argOpenIndex - 2, stopIndex];
   }
 
   boundsOfAllFunctionDefinitionsInTokens(tokens) {
     const boundsFinderFn = _.bind(this.boundsOfFirstFunctionDefinitionInTokens, this);
+    return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
+  }
+
+  indexOfFirstProto(tokens) {
+    const groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
+    const fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
+    const groupsArePresent = !_.isEmpty(groupBoundsPairs);
+    const fnDefsArePresent = !_.isEmpty(fnDefBoundsPairs);
+
+    return _.findIndex(tokens, (token, index) => {
+      if (token.name !== 'proto') return false;
+
+      const isInsideGroup = groupsArePresent && _.any(groupBoundsPairs, (bounds) => {
+        return index > bounds[0] && index < bounds[1];
+      });
+      if (isInsideGroup)          return false;
+
+      const isInsideFnDef = fnDefsArePresent && _.any(fnDefBoundsPairs, (bounds) => {
+        return index > bounds[0] && index < bounds[1];
+      });
+      if (isInsideFnDef)          return false;
+
+      return true;
+    });
+  }
+
+  boundsOfFirstProtoDefinitionInTokens(tokens) {
+    const startIndex = this.indexOfFirstProto(tokens);
+    if (startIndex === -1) return [];
+
+    const protoTokens     = tokens.slice(startIndex);
+    const validLeftTypes  = ['word'];
+    const validRightTypes = [];
+    const indexOfFrom     = this.indexOfBinaryOperation('protoDerivation',     protoTokens, { validLeftTypes, validRightTypes })
+    const indexOfShaped   = this.indexOfBinaryOperation('shapeDefinition',     protoTokens, { validLeftTypes, validRightTypes })
+    const indexOfExtends  = this.indexOfBinaryOperation('extensionDefinition', protoTokens, { validLeftTypes, validRightTypes })
+
+    const lastDescriptorIndex = _.max([indexOfFrom, indexOfShaped, indexOfExtends]);
+    const descriptorToken     = protoTokens[lastDescriptorIndex];
+    if (lastDescriptorIndex === -1)          return [startIndex, startIndex + 1];
+    if (lastDescriptorIndex === indexOfFrom) return [startIndex, startIndex + indexOfFrom + 1];
+
+    const restOfTokens  = protoTokens.slice(lastDescriptorIndex);
+    const boundsOfBlock = this.boundsOfFirstGroupInTokens(restOfTokens);
+    if (_.isEmpty(boundsOfBlock)) {
+      throw errorAt(descriptorToken, `Expected block for ${descriptorToken.name} descriptor`);
+    }
+
+    const canonicalBounds = _.map(boundsOfBlock, boundary => boundary + startIndex + lastDescriptorIndex);
+    const endIndex        = canonicalBounds[1];
+    return [startIndex, endIndex];
+  }
+
+  boundsOfAllProtoDefinitionsInTokens(tokens) {
+    const boundsFinderFn = _.bind(this.boundsOfFirstProtoDefinitionInTokens, this);
     return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
   }
 
@@ -234,6 +282,9 @@ export default class Syntaxer {
       exponentiation:         ['starStar'],
       hashPair:               ['colon'],
       dispatch:               ['dot'],
+      protoDerivation:        ['from'],
+      shapeDefinition:        ['shaped'],
+      extensionDefinition:    ['extends'],
     }[operationName];
 
     if (_.isEmpty(operatorNames)) throw `Invalid binary operation '${operationName}'`;
@@ -355,11 +406,11 @@ export default class Syntaxer {
     if (_.isUndefined(tokenAfterColon)) return -1;
 
     const firstColonToken   = tokens[indexOfFirstColon];
-    const linesBeforeColon  = tokenBeforeColon.line - firstColonToken.line;
+    const linesBeforeColon  = this.linesBetween(tokenBeforeColon, firstColonToken);
     if (linesBeforeColon > 0) return -1;
 
-    const linesAfterColon  = tokenAfterColon.line   - firstColonToken.line;
-    const spacesAfterColon = tokenAfterColon.column - firstColonToken.column - 1;
+    const linesAfterColon  = this.linesBetween(firstColonToken, tokenAfterColon);
+    const spacesAfterColon = this.columnsBetween(firstColonToken, tokenAfterColon);
     if (linesAfterColon === 0 && spacesAfterColon === 0) return -1;
 
     return indexOfFirstColon;
@@ -556,46 +607,202 @@ export default class Syntaxer {
     };
   }
 
-  functionDefinitionNode(boundsOfDef, tokens) {
-    const firstToken  = tokens[0];
-    const secondToken = tokens[1];
+  startsWithPropDefinition(tokens) {
+    const [nameToken, colonToken, typeToken] = tokens;
+    if (_.isUndefined(nameToken)  || nameToken.name  !== 'identifier') return false;
+    if (_.isUndefined(colonToken) || colonToken.name !== 'colon')      return false;
+    if (_.isUndefined(typeToken)  || typeToken.type  !== 'word')       return false;
+    if (nameToken.line !== colonToken.line)                            return false;
+    if (colonToken.line !== typeToken.line)                            return false;
 
-    if (boundsOfDef[0] !== 0) {
-      throw errorAt(firstToken, 'Expected function definition');
+    const spacesBeforeColon = this.columnsBetween(nameToken, colonToken);
+    const spacesAfterColon  = this.columnsBetween(colonToken, typeToken);
+    if (spacesBeforeColon > 0 || spacesAfterColon > 0) return false;
+
+    return true;
+  }
+
+  startsWithPropDefault(tokens) {
+    if (!this.startsWithPropDefinition(tokens))      return false;
+    const defaultToken = tokens[3];
+    if (defaultToken && defaultToken.name === 'set') return false;
+    return true;
+  }
+
+  startsWithPropSetter(tokens) {
+    if (!this.startsWithPropDefinition(tokens))             return false;
+    const setToken = tokens[3];
+    if (_.isUndefined(setToken) || setToken.name !== 'set') return false;
+    return true;
+  }
+
+  startsWithFnDeclaration(tokens) {
+    const [defToken, nameToken] = tokens;
+    if (_.isUndefined(defToken)  || defToken.name  !== 'def')        return false;
+    if (_.isUndefined(nameToken) || nameToken.name !== 'identifier') return false;
+
+    const argBounds = this.boundsOfFirstGroupInTokens(tokens);
+    if (argBounds[0] !== 2)                                          return false;
+
+    const colonToken = tokens[argBounds[1] + 1];
+    if (_.isUndefined(colonToken) || colonToken.name !== 'colon')    return false;
+
+    return true;
+  }
+
+  startsWithAnonFn(tokens) {
+    const argBounds = this.boundsOfFirstGroupInTokens(tokens);
+    if (argBounds[0] !== 0)                                       return false;
+
+    const colonToken = tokens[argBounds[1] + 1];
+    if (_.isUndefined(colonToken) || colonToken.name !== 'colon') return false;
+
+    return true;
+  }
+
+  linesBetween(firstToken = {}, secondToken = {}) {
+    return Math.abs(firstToken.line - secondToken.line);
+  }
+
+  columnsBetween(firstToken = { lexeme: '' }, secondToken = { lexeme: '' }) {
+    const [startToken, endToken] = _.sortBy([firstToken, secondToken], 'column');
+    const startCol = startToken.column + startToken.lexeme.length;
+    const endCol   = endToken.column;
+    return endCol - startCol;
+  }
+
+  anonFnDefinitionNode(tokens) {
+    const argBounds = this.boundsOfFirstGroupInTokens(tokens);
+    if (argBounds[0] !== 0) {
+      throw errorAt(tokens[0], 'Expected arguments to begin the anonymous function');
     }
 
-    const colonIndex          = this.indexOfFirstFunctionColon(tokens);
-    const colonToken          = tokens[colonIndex];
-    const oneTokenToTheLeft   = tokens[colonIndex - 1];
-    const oneTokenToTheRight  = tokens[colonIndex + 1];
-    const twoTokensToTheRight = tokens[colonIndex + 2];
+    const colonIndex = argBounds[1] + 1;
+    const colonToken = tokens[colonIndex];
+    if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
+      throw errorAt(colonToken, 'Expected valid function definition');
+    }
 
-    const hasArguments  = oneTokenToTheLeft.name === 'closeParen';
-    const isPropSetter  = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name === 'set';
-    const isPropDefault = oneTokenToTheLeft.name === 'identifier' && twoTokensToTheRight.name !== 'set';
-    const isDeclaration = firstToken.name        === 'def';
-
-    const spacesAfterColon = oneTokenToTheRight ? oneTokenToTheRight.column - colonToken.column - 1 : 999;
-    const isTyped          = oneTokenToTheRight.type === 'word' && spacesAfterColon === 0;
-    const typeToken        = isTyped ? oneTokenToTheRight : null;
-    const nameToken        = isDeclaration ? secondToken : (isPropSetter ? firstToken : null);
-
-    const boundsOfArgs    = hasArguments ? this.boundsOfFirstGroupInTokens(tokens) : [];
-    const argumentsTokens = _.isEmpty(boundsOfArgs) ? [] : tokens.slice(boundsOfArgs[0] + 1, boundsOfArgs[1]);
-
-    const blockStartIndex = colonIndex + _.filter([isTyped, isPropSetter]).length + 1;
+    const tokenAfterColon = tokens[colonIndex + 1];
+    const linesAfterColon = this.linesBetween(colonToken, tokenAfterColon);
+    const colsAfterColon  = this.columnsBetween(colonToken, tokenAfterColon);
+    const typeToken       = (linesAfterColon === 0 && colsAfterColon === 0) ? tokenAfterColon : undefined;
+    const argTokens       = tokens.slice(argBounds[0] + 1, argBounds[1])
+    const blockStartIndex = colonIndex + (_.isUndefined(typeToken) ? 1 : 2);
     const blockTokens     = tokens.slice(blockStartIndex);
 
     return {
-      operation: 'functionDefinition',
-      isDeclaration,
-      isPropSetter,
-      isPropDefault,
+      operation: 'anonFnDefinition',
       colonToken,
-      nameToken,
       typeToken,
-      argumentsNode: this.pemdasNodeFromStatement(argumentsTokens),
+      argumentsNode: this.pemdasNodeFromStatement(argTokens),
       blockNodes:    this.traverse(blockTokens),
+    };
+  }
+
+  fnDeclarationNode(tokens) {
+    const defToken = tokens[0];
+    if (_.isUndefined(defToken) || defToken.name !== 'def') {
+      throw errorAt(defToken, 'Expected "def" to start the function declaration');
+    }
+
+    const nameToken = tokens[1];
+    if (_.isUndefined(nameToken) || nameToken.name !== 'identifier') {
+      throw errorAt(nameToken, 'Expected the function declaration to have a valid name');
+    }
+
+    const argBounds = this.boundsOfFirstGroupInTokens(tokens);
+    if (argBounds[0] !== 2) {
+      throw errorAt(nameToken, 'Expected arguments for function declaration after name');
+    }
+
+    const colonIndex = argBounds[1] + 1;
+    const colonToken = tokens[colonIndex];
+    if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
+      throw errorAt(colonToken, 'Expected valid function declaration');
+    }
+
+    const tokenAfterColon = tokens[colonIndex + 1];
+    const linesAfterColon = this.linesBetween(colonToken, tokenAfterColon);
+    const colsAfterColon  = this.columnsBetween(colonToken, tokenAfterColon);
+    const typeToken       = (linesAfterColon === 0 && colsAfterColon === 0) ? tokenAfterColon : undefined;
+    const argTokens       = tokens.slice(argBounds[0] + 1, argBounds[1]);
+    const blockStartIndex = colonIndex + (_.isUndefined(typeToken) ? 1 : 2);
+    const blockTokens     = tokens.slice(blockStartIndex);
+
+    return {
+      operation: 'fnDeclaration',
+      nameToken,
+      colonToken,
+      typeToken,
+      argumentsNode: this.pemdasNodeFromStatement(argTokens),
+      blockNodes:    this.traverse(blockTokens),
+    };
+  }
+
+  propDefaultNode(tokens) {
+    const nameToken = tokens[0];
+    if (_.isUndefined(nameToken) || nameToken.name !== 'identifier') {
+      throw errorAt(nameToken, 'Expected the prop default to have a valid name');
+    }
+
+    const colonToken = tokens[1];
+    if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
+      throw errorAt(colonToken, 'Expected valid prop default definition');
+    }
+
+    const typeToken       = tokens[2];
+    const linesAfterColon = this.linesBetween(colonToken, typeToken);
+    const colsAfterColon  = this.columnsBetween(colonToken, typeToken);
+    const typePosIsValid  = linesAfterColon === 0 && colsAfterColon === 0;
+    if (_.isUndefined(typeToken) || !typePosIsValid || typeToken.type !== 'word') {
+      throw errorAt(colonToken, 'Prop must specify a type');
+    }
+
+    const blockTokens = tokens.slice(3);
+
+    return {
+      operation: 'propDefault',
+      nameToken,
+      colonToken,
+      typeToken,
+      blockNodes: this.traverse(blockTokens),
+    };
+  }
+
+  propSetterNode(tokens) {
+    const nameToken = tokens[0];
+    if (_.isUndefined(nameToken) || nameToken.name !== 'identifier') {
+      throw errorAt(nameToken, 'Expected the prop default to have a valid name');
+    }
+
+    const colonToken = tokens[1];
+    if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
+      throw errorAt(colonToken, 'Expected valid prop default definition');
+    }
+
+    const typeToken       = tokens[2];
+    const linesAfterColon = this.linesBetween(colonToken, typeToken);
+    const colsAfterColon  = this.columnsBetween(colonToken, typeToken);
+    const typePosIsValid  = linesAfterColon === 0 && colsAfterColon === 0;
+    if (_.isUndefined(typeToken) || !typePosIsValid || typeToken.type !== 'word') {
+      throw errorAt(colonToken, 'Prop must specify a type');
+    }
+
+    const setToken       = tokens[3];
+    const linesAfterType = this.linesBetween(typeToken, setToken);
+    if (_.isUndefined(setToken) || linesAfterType !== 0) {
+      throw errorAt(typeToken, 'Expected prop setter "set" keyword after specifying type');
+    }
+
+    const blockTokens = tokens.slice(4);
+
+    return {
+      operation: 'propSetter',
+      nameToken,
+      colonToken,
+      typeToken,
+      blockNodes: this.traverse(blockTokens),
     };
   }
 
@@ -654,6 +861,37 @@ export default class Syntaxer {
       token:     colonToken,
       keyNode:   this.pemdasNodeFromStatement(leftTokens),
       valueNode: this.pemdasNodeFromStatement(rightTokens),
+    };
+  }
+
+  protoDefinitionNode(tokens) {
+    const protoToken = tokens[0];
+    if (protoToken.name !== 'proto') {
+      throw errorAt(protoToken, 'Expected proto definition');
+    }
+
+    const validLeftTypes  = ['word'];
+    const validRightTypes = [];
+    const indexOfFrom     = this.indexOfBinaryOperation('protoDerivation',     tokens, { validLeftTypes, validRightTypes });
+    const indexOfShaped   = this.indexOfBinaryOperation('shapeDefinition',     tokens, { validLeftTypes, validRightTypes });
+    const indexOfExtends  = this.indexOfBinaryOperation('extensionDefinition', tokens, { validLeftTypes, validRightTypes });
+
+    const derivationToken       = tokens[indexOfFrom] && tokens[indexOfFrom + 1];
+    const shapeBlockBounds      = indexOfShaped  === -1 ? [] : this.boundsOfFirstGroupInTokens(tokens.slice(indexOfShaped));
+    const extendBlockBounds     = indexOfExtends === -1 ? [] : this.boundsOfFirstGroupInTokens(tokens.slice(indexOfExtends));
+    const canonicalShapeBounds  = _.map(shapeBlockBounds,  boundary => boundary + indexOfShaped);
+    const canonicalExtendBounds = _.map(extendBlockBounds, boundary => boundary + indexOfExtends);
+
+    // hacky bullshit that needs to be rewritten ASAP
+    const shapeTokens     = tokens.slice((canonicalShapeBounds[0]  || -1) + 1, (canonicalShapeBounds[1]  || 0));
+    const extensionTokens = tokens.slice((canonicalExtendBounds[0] || -1) + 1, (canonicalExtendBounds[1] || 0));
+
+    return {
+      operation: 'protoDefinition',
+      protoToken,
+      derivationToken,
+      shapeBlockNodes:  this.traverse(shapeTokens),
+      extendBlockNodes: this.traverse(extensionTokens),
     };
   }
 
@@ -732,10 +970,20 @@ export default class Syntaxer {
       return this.hashPairNode(indexOfHashColon, statementTokens);
     }
 
-    const boundsOfFirstFn = this.boundsOfFirstFunctionDefinitionInTokens(statementTokens);
-    if (boundsOfFirstFn[0] === 0) {
-      return this.functionDefinitionNode(boundsOfFirstFn, statementTokens);
+    const isAnonymousFn   = this.startsWithAnonFn(statementTokens);
+    const isFnDeclaration = !isAnonymousFn && this.startsWithFnDeclaration(statementTokens);
+    const isPropDefault   = !isAnonymousFn && !isFnDeclaration && this.startsWithPropDefault(statementTokens);
+    const isPropSetter    = !isAnonymousFn && !isFnDeclaration && !isPropDefault && this.startsWithPropSetter(statementTokens);
+
+    switch (true) {
+      case isAnonymousFn:   return this.anonFnDefinitionNode(statementTokens);
+      case isFnDeclaration: return this.fnDeclarationNode(statementTokens);
+      case isPropDefault:   return this.propDefaultNode(statementTokens);
+      case isPropSetter:    return this.propSetterNode(statementTokens);
+      default: break; // to satisfy eslint
     }
+
+    if (firstToken.name === 'proto') return this.protoDefinitionNode(statementTokens);
 
     const indexOfDispatch     = this.indexOfDispatch(statementTokens);
     const indexOfFunctionCall = this.indexOfFunctionCall(statementTokens);
