@@ -1,15 +1,5 @@
 import _ from 'underscore';
-
-function errorAt(token, message = "Syntax error") {
-  const position =  `L${token.line}/C${token.column}`;
-  return `${message} at ${position}`;
-}
-
-function errorBetween(startToken, endToken, message = "Syntax error") {
-  const startPos  = `L${startToken.line}/C${startToken.column}`;
-  const endPos    = `L${endToken.line}/C${endToken.column}`;
-  return `${message} between ${startPos} and ${endPos}`;
-}
+import { SyntaxError } from '../errors/errors';
 
 export default class Syntaxer {
   constructor(options) {
@@ -104,12 +94,12 @@ export default class Syntaxer {
         return _.isEmpty(openStack);
       }
 
-      throw errorAt(token, `Unmatched ${token.name}`);
+      throw SyntaxError.at(token, `Unmatched ${token.name}`);
     });
 
     if (closeIndex < 0) {
       const openToken = tokens[openIndex];
-      throw errorAt(openToken, `Unmatched ${openToken.name}`);
+      throw SyntaxError.at(openToken, `Unmatched ${openToken.name}`);
     }
 
     return [openIndex, closeIndex];
@@ -212,26 +202,106 @@ export default class Syntaxer {
     return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
   }
 
-  indexOfFirstProto(tokens) {
-    const groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
-    const fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
-    const groupsArePresent = !_.isEmpty(groupBoundsPairs);
-    const fnDefsArePresent = !_.isEmpty(fnDefBoundsPairs);
+  boundsOfFirstConditionalInTokens(conditionalOperatorName, tokens) {
+    const conditionalIndex = _.findIndex(tokens, { name: conditionalOperatorName });
+    if (conditionalIndex === -1) return [];
 
-    return _.findIndex(tokens, (token, index) => {
-      if (token.name !== 'proto') return false;
+    const conditionalToken = tokens[conditionalIndex];
+    const stopIndex = _.findIndex(tokens, (currentToken, index) => {
+      if (index < conditionalIndex)                   return false;
 
-      const isInsideGroup = groupsArePresent && _.any(groupBoundsPairs, (bounds) => {
-        return index > bounds[0] && index < bounds[1];
-      });
-      if (isInsideGroup)          return false;
+      const nextToken = tokens[index + 1];
+      if (_.isUndefined(nextToken))                   return true;
 
-      const isInsideFnDef = fnDefsArePresent && _.any(fnDefBoundsPairs, (bounds) => {
-        return index > bounds[0] && index < bounds[1];
-      });
-      if (isInsideFnDef)          return false;
+      const currentTokens = tokens.slice(conditionalIndex, index + 1);
+      if (!this.hasBalancedGrouping(currentTokens))   return false;
+      if (nextToken.line === currentToken.line)       return false;
+      if (nextToken.indent > conditionalToken.indent) return false;
 
       return true;
+    });
+
+    if (stopIndex === -1) {
+      throw SyntaxError.at(conditionalToken, `Couldn't find the end of ${conditionalOperatorName} statement`);
+    }
+
+    return [conditionalIndex, stopIndex];
+  }
+
+  boundsOfFirstCheckInTokens(tokens) {
+    return this.boundsOfFirstConditionalInTokens('check', tokens);
+  }
+
+  boundsOfAllChecksInTokens(tokens) {
+    const boundsFinderFn = _.bind(this.boundsOfFirstCheckInTokens, this);
+    return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
+  }
+
+  boundsOfFirstGuardInTokens(tokens) {
+    return this.boundsOfFirstConditionalInTokens('guard', tokens);
+  }
+
+  boundsOfAllGuardsInTokens(tokens) {
+    const boundsFinderFn = _.bind(this.boundsOfFirstCheckInTokens, this);
+    return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
+  }
+
+  // assumes the tokens start with the condition... kinda janky, but that's how
+  // it's currently used. FIXME.
+  boundsOfFirstRocketConditionInTokens(tokens) {
+    const indexOfRocket = this.indexOfRocket(tokens);
+    if (indexOfRocket === -1) return [];
+
+    const boundsPairs = this.boundsOfAllStructuresInTokens(tokens);
+    const conditionEndIndex = _.findIndex(tokens, (token, index) => {
+      if (index <= indexOfRocket)          return false;
+
+      const isInsideStructure = this.indexIsInsideBoundsPairs(index, boundsPairs);
+      if (isInsideStructure)               return false;
+
+      const nextToken = tokens[index + 1];
+      if (nextToken.name === 'exhaust')    return true;
+      if (nextToken.line === token.line)   return false;
+      if (nextToken.indent > token.indent) return false;
+
+      return true;
+    });
+
+    if (conditionEndIndex === -1) {
+      throw SyntaxError.at(tokens[indexOfRocket], 'Could not find the end of the rocket condition');
+    }
+
+    return [0, conditionEndIndex];
+  }
+
+  boundsOfAllStructuresInTokens(tokens, options = { except: [] }) {
+    const { except } = options;
+    const allStructureTypes  = ['group', 'function', 'proto', 'check', 'guard'];
+    const filteredStructures = _.without(allStructureTypes, except);
+    const structurePairFuncs = {
+      group:    _.bind(this.boundsOfAllGroupsInTokens, this),
+      function: _.bind(this.boundsOfAllFunctionDefinitionsInTokens, this),
+      proto:    _.bind(this.boundsOfAllProtoDefinitionsInTokens, this),
+      check:    _.bind(this.boundsOfAllChecksInTokens, this),
+      guard:    _.bind(this.boundsOfAllGuardsInTokens, this),
+    }
+
+    return _.reduce(filteredStructures, (boundsPairs, structureType) => {
+      const pairsForStructure = structurePairFuncs[structureType](tokens);
+      return boundsPairs.concat(pairsForStructure);
+    }, [])
+  }
+
+  indexIsInsideBoundsPairs(index, boundsPairs) {
+    if (_.isEmpty(boundsPairs)) return false;
+    return _.any(boundsPairs, bounds => bounds[0] < index && index < bounds[1]);
+  }
+
+  indexOfFirstProto(tokens) {
+    const boundsPairs = this.boundsOfAllStructuresInTokens(tokens, { except: ['proto'] });
+    return _.findIndex(tokens, (token, index) => {
+      if (token.name !== 'proto') return false;
+      return this.indexIsInsideBoundsPairs(index, boundsPairs);
     });
   }
 
@@ -254,7 +324,7 @@ export default class Syntaxer {
     const restOfTokens  = protoTokens.slice(lastDescriptorIndex);
     const boundsOfBlock = this.boundsOfFirstGroupInTokens(restOfTokens);
     if (_.isEmpty(boundsOfBlock)) {
-      throw errorAt(descriptorToken, `Expected block for ${descriptorToken.name} descriptor`);
+      throw SyntaxError.at(descriptorToken, `Expected block for ${descriptorToken.name} descriptor`);
     }
 
     const canonicalBounds = _.map(boundsOfBlock, boundary => boundary + startIndex + lastDescriptorIndex);
@@ -281,6 +351,7 @@ export default class Syntaxer {
       multiplication:         ['star'],
       exponentiation:         ['starStar'],
       hashPair:               ['colon'],
+      rocketCondition:        ['rocket'],
       dispatch:               ['dot'],
       protoDerivation:        ['from'],
       shapeDefinition:        ['shaped'],
@@ -289,29 +360,15 @@ export default class Syntaxer {
 
     if (_.isEmpty(operatorNames)) throw `Invalid binary operation '${operationName}'`;
 
-    const groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
-    const fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
-    const groupsArePresent = !_.isEmpty(groupBoundsPairs);
-    const fnDefsArePresent = !_.isEmpty(fnDefBoundsPairs);
+    const allowProto  = _.contains(['protoDerivation', 'shapeDefinition', 'extensionDefinition'], operationName);
+    const except      = allowProto ? ['proto'] : [];
+    const boundsPairs = this.boundsOfAllStructuresInTokens(tokens, { except });
 
     return _.findIndex(tokens, (token, index) => {
       if (!_.contains(operatorNames, token.name)) return false;
 
-      const isInsideGroup = groupsArePresent && _.any(groupBoundsPairs, (bounds) => {
-        return index > bounds[0] && index < bounds[1];
-      });
-      if (isInsideGroup)                          return false;
-
-      const isInsideFunctionDefinition = fnDefsArePresent && _.any(fnDefBoundsPairs, (bounds) => {
-        return index > bounds[0] && index < bounds[1];
-      });
-      if (isInsideFunctionDefinition)             return false;
-
-      const leftToken = tokens[index - 1];
-      if (_.isUndefined(leftToken))               return false;
-
-      const rightToken = tokens[index + 1];
-      if (_.isUndefined(rightToken))              return false;
+      const isInsideStructure = this.indexIsInsideBoundsPairs(index, boundsPairs);
+      if (isInsideStructure)                      return false;
 
       const leftIsValid = (
         _.contains(validLeftTypes, leftToken.type) ||
@@ -325,7 +382,9 @@ export default class Syntaxer {
         rightToken.name === 'identifier'             ||
         this.isOpenGroupToken(rightToken)
       );
-      return leftIsValid && rightIsValid;
+      if (!rightIsValid)                          return false;
+
+      return true;
     });
   }
 
@@ -416,6 +475,12 @@ export default class Syntaxer {
     return indexOfFirstColon;
   }
 
+  indexOfRocket(tokens) {
+    const validLeftTypes  = ['word', 'number', 'string', 'regex'];
+    const validRightTypes = ['word', 'number', 'string', 'regex', 'operator'];
+    return this.indexOfBinaryOperation('rocketCondition', tokens, { validLeftTypes, validRightTypes });
+  }
+
   indexOfDispatch(tokens) {
     const validLeftTypes  = ['word', 'number', 'string', 'regex'];
     const validRightTypes = ['word'];
@@ -426,9 +491,13 @@ export default class Syntaxer {
     const boundsOfFirstGroup = this.boundsOfFirstGroupInTokens(tokens);
     if (_.isEmpty(boundsOfFirstGroup)) return -1;
 
-    const indexOfOpenToken = boundsOfFirstGroup[0];
-    const openToken        = tokens[indexOfOpenToken];
-    const leftToken        = tokens[indexOfOpenToken - 1];
+    const indexOfOpenToken  = boundsOfFirstGroup[0];
+    const boundsPairs       = this.boundsOfAllStructuresInTokens(tokens, { except: 'group' });
+    const isInsideStructure = this.indexIsInsideBoundsPairs(index, boundsPairs);
+    if (isInsideStructure)             return -1;
+
+    const openToken = tokens[indexOfOpenToken];
+    const leftToken = tokens[indexOfOpenToken - 1];
     if (openToken.name === 'openParen' && leftToken) {
       const validTypes = ['word', 'string', 'number'];
       const validNames = ['closeParen', 'closeBracket', 'closeBrace'];
@@ -452,24 +521,13 @@ export default class Syntaxer {
   firstStatementFromTokens(tokens) {
     if (_.isEmpty(tokens)) return [];
 
-    const groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
-    const fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
-    const groupsArePresent = !_.isEmpty(groupBoundsPairs);
-    const fnDefsArePresent = !_.isEmpty(fnDefBoundsPairs);
-
+    const boundsPairs     = this.boundsOfAllStructuresInTokens(tokens);
     const statementEndPos = _.findIndex(tokens, (currentToken, index) => {
       const nextToken = tokens[index + 1];
       if (_.isUndefined(nextToken))             return true;
 
-      const isInsideGroup = groupsArePresent && _.any(groupBoundsPairs, (bounds) => {
-        return index > bounds[0] && index < bounds[1];
-      });
-      if (isInsideGroup)                        return false;
-
-      const isInsideFunctionDefinition = fnDefsArePresent && _.any(fnDefBoundsPairs, (bounds) => {
-        return index > bounds[0] && index < bounds[1];
-      });
-      if (isInsideFunctionDefinition)           return false;
+      const isInsideStructure = this.indexIsInsideBoundsPairs(index + 1, boundsPairs);
+      if (isInsideStructure)                    return false;
 
       if (nextToken.line === currentToken.line) return false;
 
@@ -483,7 +541,7 @@ export default class Syntaxer {
   identityNode(token) {
     const validIdentityTypes = ['word', 'string', 'number', 'regex'];
     if (!_.contains(validIdentityTypes, token.type)) {
-      throw errorAt(token, 'Expected to find valid identity token');
+      throw SyntaxError.at(token, 'Expected to find valid identity token');
     }
 
     return {
@@ -498,7 +556,7 @@ export default class Syntaxer {
 
     const validUnaryOperatorNames = ['plus', 'minus', 'not'];
     if (!_.contains(validUnaryOperatorNames, operatorToken.name)) {
-      throw errorAt(operatorToken, `Expected to find ${operationName}`);
+      throw SyntaxError.at(operatorToken, `Expected to find ${operationName}`);
     }
 
     return {
@@ -533,17 +591,17 @@ export default class Syntaxer {
 
     const operatorToken = tokens[operatorIndex];
     if (!_.contains(tokenNames, operatorToken.name)) {
-      throw errorAt(operatorToken, `Expected to find ${operationName}`);
+      throw SyntaxError.at(operatorToken, `Expected to find ${operationName}`);
     }
 
     const leftTokens = _.first(tokens, operatorIndex);
     if (_.isEmpty(leftTokens)) {
-      throw errorAt(operatorToken, `Found no left-hand side for ${operationName}`);
+      throw SyntaxError.at(operatorToken, `Found no left-hand side for ${operationName}`);
     }
 
     const rightTokens = tokens.slice(operatorIndex + 1);
     if (_.isEmpty(rightTokens)) {
-      throw errorAt(operatorToken, `Found no right-hand side for ${operationName}`);
+      throw SyntaxError.at(operatorToken, `Found no right-hand side for ${operationName}`);
     }
 
     return {
@@ -557,7 +615,7 @@ export default class Syntaxer {
   sequenceNode(firstCommaIndex, tokens) {
     const firstComma = tokens[firstCommaIndex];
     if (firstComma.name !== 'comma') {
-      throw errorAt(firstComma, 'Expected to find comma');
+      throw SyntaxError.at(firstComma, 'Expected to find comma');
     }
 
     const sequenceSets = _.reduce(tokens, (sets, token) => {
@@ -589,12 +647,12 @@ export default class Syntaxer {
 
     const openToken = _.first(tokens);
     if (openToken.name !== correctOpenTokenName) {
-      throw errorAt(openToken, `Expected ${operationName} opening symbol`);
+      throw SyntaxError.at(openToken, `Expected ${operationName} opening symbol`);
     }
 
     const closeToken = _.last(tokens);
     if (!this.openTokenMatchesCloser(openToken, closeToken)) {
-      throw errorAt(closeToken, `Expected ${operationName} closing symbol`);
+      throw SyntaxError.at(closeToken, `Expected ${operationName} closing symbol`);
     }
 
     const innerTokens = tokens.slice(1, -1);
@@ -674,13 +732,13 @@ export default class Syntaxer {
   anonFnDefinitionNode(tokens) {
     const argBounds = this.boundsOfFirstGroupInTokens(tokens);
     if (argBounds[0] !== 0) {
-      throw errorAt(tokens[0], 'Expected arguments to begin the anonymous function');
+      throw SyntaxError.at(tokens[0], 'Expected arguments to begin the anonymous function');
     }
 
     const colonIndex = argBounds[1] + 1;
     const colonToken = tokens[colonIndex];
     if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
-      throw errorAt(colonToken, 'Expected valid function definition');
+      throw SyntaxError.at(colonToken, 'Expected valid function definition');
     }
 
     const tokenAfterColon = tokens[colonIndex + 1];
@@ -703,23 +761,23 @@ export default class Syntaxer {
   fnDeclarationNode(tokens) {
     const defToken = tokens[0];
     if (_.isUndefined(defToken) || defToken.name !== 'def') {
-      throw errorAt(defToken, 'Expected "def" to start the function declaration');
+      throw SyntaxError.at(defToken, 'Expected "def" to start the function declaration');
     }
 
     const nameToken = tokens[1];
     if (_.isUndefined(nameToken) || nameToken.name !== 'identifier') {
-      throw errorAt(nameToken, 'Expected the function declaration to have a valid name');
+      throw SyntaxError.at(nameToken, 'Expected the function declaration to have a valid name');
     }
 
     const argBounds = this.boundsOfFirstGroupInTokens(tokens);
     if (argBounds[0] !== 2) {
-      throw errorAt(nameToken, 'Expected arguments for function declaration after name');
+      throw SyntaxError.at(nameToken, 'Expected arguments for function declaration after name');
     }
 
     const colonIndex = argBounds[1] + 1;
     const colonToken = tokens[colonIndex];
     if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
-      throw errorAt(colonToken, 'Expected valid function declaration');
+      throw SyntaxError.at(colonToken, 'Expected valid function declaration');
     }
 
     const tokenAfterColon = tokens[colonIndex + 1];
@@ -743,12 +801,12 @@ export default class Syntaxer {
   propDefaultNode(tokens) {
     const nameToken = tokens[0];
     if (_.isUndefined(nameToken) || nameToken.name !== 'identifier') {
-      throw errorAt(nameToken, 'Expected the prop default to have a valid name');
+      throw SyntaxError.at(nameToken, 'Expected the prop default to have a valid name');
     }
 
     const colonToken = tokens[1];
     if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
-      throw errorAt(colonToken, 'Expected valid prop default definition');
+      throw SyntaxError.at(colonToken, 'Expected valid prop default definition');
     }
 
     const typeToken       = tokens[2];
@@ -756,7 +814,7 @@ export default class Syntaxer {
     const colsAfterColon  = this.columnsBetween(colonToken, typeToken);
     const typePosIsValid  = linesAfterColon === 0 && colsAfterColon === 0;
     if (_.isUndefined(typeToken) || !typePosIsValid || typeToken.type !== 'word') {
-      throw errorAt(colonToken, 'Prop must specify a type');
+      throw SyntaxError.at(colonToken, 'Prop must specify a type');
     }
 
     const blockTokens = tokens.slice(3);
@@ -773,12 +831,12 @@ export default class Syntaxer {
   propSetterNode(tokens) {
     const nameToken = tokens[0];
     if (_.isUndefined(nameToken) || nameToken.name !== 'identifier') {
-      throw errorAt(nameToken, 'Expected the prop default to have a valid name');
+      throw SyntaxError.at(nameToken, 'Expected the prop default to have a valid name');
     }
 
     const colonToken = tokens[1];
     if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
-      throw errorAt(colonToken, 'Expected valid prop default definition');
+      throw SyntaxError.at(colonToken, 'Expected valid prop default definition');
     }
 
     const typeToken       = tokens[2];
@@ -786,13 +844,13 @@ export default class Syntaxer {
     const colsAfterColon  = this.columnsBetween(colonToken, typeToken);
     const typePosIsValid  = linesAfterColon === 0 && colsAfterColon === 0;
     if (_.isUndefined(typeToken) || !typePosIsValid || typeToken.type !== 'word') {
-      throw errorAt(colonToken, 'Prop must specify a type');
+      throw SyntaxError.at(colonToken, 'Prop must specify a type');
     }
 
     const setToken       = tokens[3];
     const linesAfterType = this.linesBetween(typeToken, setToken);
     if (_.isUndefined(setToken) || linesAfterType !== 0) {
-      throw errorAt(typeToken, 'Expected prop setter "set" keyword after specifying type');
+      throw SyntaxError.at(typeToken, 'Expected prop setter "set" keyword after specifying type');
     }
 
     const blockTokens = tokens.slice(4);
@@ -811,13 +869,13 @@ export default class Syntaxer {
     const leftToken = tokens[indexOfOpenToken - 1];
 
     if (!openToken || !leftToken || openToken.name !== 'openParen') {
-      throw errorAt(openToken, 'Expected function call');
+      throw SyntaxError.at(openToken, 'Expected function call');
     }
 
     const validLeftTypes = ['word', 'string', 'number'];
     const validLeftNames = ['closeParen', 'closeBracket', 'closeBrace'];
     if (!(_.contains(validLeftTypes, leftToken.type) || _.contains(validLeftNames, leftToken.name))) {
-      throw errorAt(leftToken, 'Invalid function callee');
+      throw SyntaxError.at(leftToken, 'Invalid function callee');
     }
 
     const calleeTokens = _.first(tokens, indexOfOpenToken);
@@ -825,7 +883,7 @@ export default class Syntaxer {
     const boundsOfArgs = this.boundsOfFirstGroupInTokens(restOfTokens);
 
     if (_.isEmpty(boundsOfArgs)) {
-      throw errorAt(openToken, 'Incomplete argument group for function call');
+      throw SyntaxError.at(openToken, 'Incomplete argument group for function call');
     }
 
     const closeToken      = restOfTokens[boundsOfArgs[1]];
@@ -843,17 +901,17 @@ export default class Syntaxer {
   hashPairNode(indexOfHashColon, tokens) {
     const colonToken = tokens[indexOfHashColon];
     if (colonToken.name !== 'colon') {
-      throw errorAt(colonToken, 'Expected to find a hash pair colon');
+      throw SyntaxError.at(colonToken, 'Expected to find a hash pair colon');
     }
 
     const leftTokens = _.first(tokens, indexOfHashColon);
     if (_.isEmpty(leftTokens)) {
-      throw errorAt(colonToken, 'Found no left-hand side (key) for the hash pair');
+      throw SyntaxError.at(colonToken, 'Found no left-hand side (key) for the hash pair');
     }
 
     const rightTokens = tokens.slice(indexOfHashColon + 1);
     if (_.isEmpty(rightTokens)) {
-      throw errorAt(colonToken, 'Found no right-hand side (value) for the hash pair');
+      throw SyntaxError.at(colonToken, 'Found no right-hand side (value) for the hash pair');
     }
 
     return {
@@ -866,9 +924,7 @@ export default class Syntaxer {
 
   protoDefinitionNode(tokens) {
     const protoToken = tokens[0];
-    if (protoToken.name !== 'proto') {
-      throw errorAt(protoToken, 'Expected proto definition');
-    }
+    if (protoToken.name !== 'proto') throw SyntaxError.at(protoToken, 'Expected proto definition to begin');
 
     const validLeftTypes  = ['word'];
     const validRightTypes = [];
@@ -895,9 +951,98 @@ export default class Syntaxer {
     };
   }
 
-  regexNode(tokens) {
-    const openSlash = tokens[0];
-    if (openSlash.name !== 'slash') throw errorAt(openSlash, 'Expected regex to begin');
+  rocketConditionNode(tokens) {
+    const rocketIndex = this.indexOfRocket(tokens);
+    if (rocketIndex === -1) {
+      throw SyntaxError.at(tokens[0], 'Expected rocket condition to begin');
+    }
+
+    const boundsOfCondish = this.boundsOfFirstRocketConditionInTokens(tokens);
+    const [startIndex, endIndex] = boundsOfCondish;
+    if (startIndex !== 0) {
+      throw SyntaxError.at(tokens[0], 'Expected rocket condition to begin');
+    }
+
+    const rocketToken = tokens[rocketIndex];
+    const leftTokens  = _.first(tokens, rocketIndex);
+    const rightTokens = tokens.slice(rocketIndex + 1, endIndex);
+
+    return {
+      operation: 'rocketCondition',
+      rocketToken,
+      leftNodes:  this.traverse(leftTokens),
+      rightNodes: this.traverse(rightTokens),
+    };
+  }
+
+  exhaustConditionNode(tokens) {
+    const exhaustToken = tokens[0];
+    if (exhaustToken.name !== 'exhaust') {
+      throw SyntaxError.at(exhaustToken, 'Expected exhaust condition to begin');
+    }
+
+    return {
+      operation: 'exhaustCondition',
+      exhaustToken,
+      rightNodes: this.traverse(tokens.slice(1)),
+    };
+  }
+
+  conditionNodes(tokens, nodeList = []) {
+    const indexOfRocket = this.indexOfRocket(tokens);
+    if (indexOfRocket === -1) {
+      if (firstToken.name === 'exhaust') {
+        const exhaustNode = this.exhaustConditionNode(tokens);
+        nodeList.push(exhaustNode);
+      }
+      return nodeList;
+    }
+
+    const boundsOfCondition = this.boundsOfFirstRocketConditionInTokens(tokens);
+    if (_.isEmpty(boundsOfCondition)) {
+      throw SyntaxError.at(tokens[indexOfRocket], 'Expected rocket condition');
+    }
+
+    const [conditionStartIndex, conditionEndIndex] = boundsOfCondition;
+    const conditionTokens = tokens.slice(conditionStartIndex, conditionEndIndex + 1);
+    const rocketNode      = this.rocketConditionNode(conditionTokens);
+    const restOfTokens    = tokens.slice(conditionEndIndex + 1);
+    nodeList.push(rocketNode);
+
+    return this.conditionNodes(restOfTokens, nodeList);
+  }
+
+  conditionalNode(conditionalOperatorName, tokens) {
+    const conditionalToken = tokens[0];
+    if (conditionalToken.name !== conditionalOperatorName) {
+      throw SyntaxError.at(conditionalToken, `Expected ${conditionalOperatorName} to begin`);
+    }
+
+    const tokenName       = `${conditionalOperatorName}Token`;
+    const argBounds       = this.boundsOfFirstGroupInTokens(tokens);
+    const argOpenIndex    = argBounds[0];
+    const argCloseIndex   = argBounds[1];
+    const hasArgs         = argOpenIndex === 1 && tokens[1].name === 'openParen';
+    const argumentsNode   = hasArgs ? this.pemdasNodeFromStatement(tokens.slice(argOpenIndex + 1, argCloseIndex)) : undefined;
+    const boundsOfCondish = this.boundsOfFirstConditionalInTokens(conditionalOperatorName, tokens);
+    const blockStartIndex = hasArgs ? argCloseIndex + 1 : 1;
+    const blockEndIndex   = boundsOfCondish[1];
+    const blockTokens     = tokens.slice(blockStartIndex, blockEndIndex + 1);
+
+    return {
+      operation:   conditionalOperatorName,
+      [tokenName]: conditionalToken,
+      argumentsNode,
+      conditionNodes: this.conditionNodes(blockTokens),
+    };
+  }
+
+  checkNode(tokens) {
+    return this.conditionalNode('check', tokens);
+  }
+
+  guardNode(tokens) {
+    return this.conditionalNode('guard', tokens);
   }
 
   pemdasNodeFromStatement(statementTokens) {
@@ -1004,12 +1149,11 @@ export default class Syntaxer {
       case 'openParen':   return this.groupNode('parenGroup',   statementTokens);
       case 'openBracket': return this.groupNode('bracketGroup', statementTokens);
       case 'openBrace':   return this.groupNode('braceGroup',   statementTokens);
-      case 'slash':       return this.regexNode(statementTokens);
       default: break; // to satisfy eslint
     }
 
     const lastToken = _.last(statementTokens);
-    throw errorBetween(firstToken, lastToken, 'Unrecognized statement');
+    throw SyntaxError.between(firstToken, lastToken, 'Unrecognized statement');
   }
 
   traverse(tokens = this.tokenList, nodes = []) {

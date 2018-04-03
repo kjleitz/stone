@@ -1551,52 +1551,51 @@
 },{}],2:[function(require,module,exports){
 'use strict';
 
-var _underscore = require('underscore');
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
 
-var _underscore2 = _interopRequireDefault(_underscore);
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
-var _lexer = require('./lexer.js');
+var _token = require('../leaves/token');
 
-var _lexer2 = _interopRequireDefault(_lexer);
+var _token2 = _interopRequireDefault(_token);
 
-var _syntaxer = require('./syntaxer.js');
+var _token_util = require('../utils/token_util');
 
-var _syntaxer2 = _interopRequireDefault(_syntaxer);
+var _token_util2 = _interopRequireDefault(_token_util);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-// for testing it out in chrome/dev tools... don't judge
-window.addEventListener('load', function () {
-  window._ = _underscore2.default;
-  window.Lexer = _lexer2.default;
-  window.Syntaxer = _syntaxer2.default;
-  window.fileText = "foo = 'me \"says\":'\ndef bar(baz):Str\n  abc = 'hi, how\\'s it going?'\n  return baz + abc\n\n# this is just a comment\nbar(foo)";
-  window.lex = new _lexer2.default({ fileText: window.fileText });
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-  var brainstormXHR = new XMLHttpRequest();
-  brainstormXHR.open('GET', '/brainstorm.stone');
-  brainstormXHR.onreadystatechange = function (event) {
-    if (event.target.readyState === 4) {
-      window.stoneFileText = event.target.responseText;
-      window.stoneLex = new _lexer2.default({ fileText: window.stoneFileText });
-      window.stoneSyn = new _syntaxer2.default({ tokenList: window.stoneLex.traverse() });
+var Lexer = function () {
+  function Lexer(fileText) {
+    _classCallCheck(this, Lexer);
+
+    this.fileText = fileText;
+  }
+
+  _createClass(Lexer, [{
+    key: 'traverse',
+    value: function traverse() {
+      var tokenList = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : [];
+      var currentCharIndex = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+
+      if (currentCharIndex >= this.fileText.length) return tokenList;
+      var token = _token2.default.firstFrom(this.fileText, { at: currentCharIndex });
+      if (_token_util2.default.typeIsSignificant(token.type)) tokenList.push(token);
+      var nextCharIndex = currentCharIndex + token.lexeme.length;
+      return this.traverse(tokenList, nextCharIndex);
     }
-  };
-  brainstormXHR.send();
+  }]);
 
-  var simpleTestXHR = new XMLHttpRequest();
-  simpleTestXHR.open('GET', '/test.stone');
-  simpleTestXHR.onreadystatechange = function (event) {
-    if (event.target.readyState === 4) {
-      window.simpleTestText = event.target.responseText;
-      window.simpleTestLex = new _lexer2.default({ fileText: window.simpleTestText });
-      window.simpleTestSyn = new _syntaxer2.default({ tokenList: window.simpleTestLex.traverse() });
-    }
-  };
-  simpleTestXHR.send();
-});
+  return Lexer;
+}();
 
-},{"./lexer.js":3,"./syntaxer.js":4,"underscore":1}],3:[function(require,module,exports){
+exports.default = Lexer;
+
+},{"../leaves/token":7,"../utils/token_util":11}],3:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -1609,11 +1608,3285 @@ var _underscore = require('underscore');
 
 var _underscore2 = _interopRequireDefault(_underscore);
 
+var _node = require('../leaves/node');
+
+var _node2 = _interopRequireDefault(_node);
+
+var _token_parser = require('../parse/token_parser');
+
+var _token_parser2 = _interopRequireDefault(_token_parser);
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-var TOKEN = {
+var Syntaxer = function () {
+  function Syntaxer(tokens) {
+    _classCallCheck(this, Syntaxer);
+
+    this.tokens = tokens;
+    this.tokensParser = new _token_parser2.default(this.tokens);
+  }
+
+  _createClass(Syntaxer, [{
+    key: 'traverse',
+    value: function traverse() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      var nodes = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
+
+      if (_underscore2.default.isEmpty(tokens)) return nodes;
+      var firstStatement = this.tokensParser.firstStatement();
+      var firstNode = _node2.default.fromStatement(firstStatement);
+      nodes.push(firstNode);
+      var restOfTokens = tokens.slice(firstStatement.length);
+      return this.traverse(restOfTokens, nodes);
+    }
+
+    // isGroup(tokens) {
+    //   const openToken  = _.first(tokens);
+    //   const closeToken = _.last(tokens);
+    //   return this.openTokenMatchesCloser(openToken, closeToken);
+    // }
+
+    // isOpenGroupToken(token) {
+    //   if (token.type !== 'grouping') return false;
+    //   return _.contains(['openParen', 'openBracket', 'openBrace'], token.name);
+    // }
+
+    // isCloseGroupToken(token) {
+    //   if (token.type !== 'grouping') return false;
+    //   return _.contains(['closeParen', 'closeBracket', 'closeBrace'], token.name);
+    // }
+
+    // openTokenMatchesCloser(openToken, closeToken) {
+    //   if (_.isUndefined(openToken) || _.isUndefined(closeToken))           return false;
+    //   if (openToken.type !== 'grouping' || closeToken.type !== 'grouping') return false;
+    //   const validCloserFor = { '(': ')', '[': ']', '{': '}' };
+    //   const validOpeners   = _.keys(validCloserFor);
+    //   const openerIsValid  = _.contains(validOpeners, openToken.lexeme);
+    //   const closerIsValid  = closeToken.lexeme === validCloserFor[openToken.lexeme];
+    //   return openerIsValid && closerIsValid;
+    // }
+
+    // // Given a set of tokens, returns true if the tokens follow valid grouping rules (all open
+    // // grouping symbols are properly matched with closing symbols, or there are no groups), or
+    // // false if a group is not closed properly. Throws an error for orphaned closing symbols.
+    // hasBalancedGrouping(tokens) {
+    //   const openStack = [];
+    //   _.each(tokens, (token) => {
+    //     if (token.type !== 'grouping') return;
+
+    //     if (this.isOpenGroupToken(token)) {
+    //       openStack.push(token);
+    //       return;
+    //     }
+
+    //     if (this.openTokenMatchesCloser(_.last(openStack), token)) {
+    //       openStack.pop();
+    //     }
+    //   });
+
+    //   return _.isEmpty(openStack);
+    // }
+
+    // findAllBoundsInTokensWith(findFirstBoundsInTokensFn, tokens, boundsPairs = []) {
+    //   const previousPair = _.last(boundsPairs);
+    //   const startIndex   = _.isUndefined(previousPair) ? 0 : previousPair[1] + 1;
+    //   const restOfTokens = tokens.slice(startIndex);
+    //   if (_.isEmpty(restOfTokens))    return boundsPairs;
+
+    //   const boundsOfFirstFn = findFirstBoundsInTokensFn(restOfTokens);
+    //   if (_.isEmpty(boundsOfFirstFn)) return boundsPairs;
+
+    //   const canonicalBounds = _.map(boundsOfFirstFn, boundary => boundary + startIndex);
+    //   boundsPairs.push(canonicalBounds);
+
+    //   return this.findAllBoundsInTokensWith(findFirstBoundsInTokensFn, tokens, boundsPairs);
+    // }
+
+    // // Given a set of tokens, returns the indices of the first open grouping symbol and its
+    // // matching closing symbol... essentially the beginning and end of the first group. Returns
+    // // an array: [] if there are no groups, or [openSymbolIndex, closeSymbolIndex] otherwise.
+    // // It will throw an error if there is no matching closing symbol for an open group.
+    // boundsOfFirstGroupInTokens(tokens) {
+    //   const openIndex = _.findIndex(tokens, token => this.isOpenGroupToken(token));
+    //   if (openIndex < 0) return [];
+
+    //   const openStack  = [];
+    //   const closeIndex = openIndex + _.findIndex(tokens.slice(openIndex), (token) => {
+    //     if (token.type !== 'grouping') return false;
+
+    //     if (this.isOpenGroupToken(token)) {
+    //       openStack.push(token);
+    //       return false;
+    //     }
+
+    //     if (this.openTokenMatchesCloser(_.last(openStack), token)) {
+    //       openStack.pop();
+    //       return _.isEmpty(openStack);
+    //     }
+
+    //     throw SyntaxError.at(token, `Unmatched ${token.name}`);
+    //   });
+
+    //   if (closeIndex < 0) {
+    //     const openToken = tokens[openIndex];
+    //     throw SyntaxError.at(openToken, `Unmatched ${openToken.name}`);
+    //   }
+
+    //   return [openIndex, closeIndex];
+    // }
+
+    // boundsOfAllGroupsInTokens(tokens) {
+    //   const boundsFinderFn = _.bind(this.boundsOfFirstGroupInTokens, this);
+    //   return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
+    // }
+
+    // indexOfFirstFunctionColon(tokens) {
+    //   return _.findIndex(tokens, (token, index) => {
+    //     if (token.name !== 'colon')                         return false;
+
+    //     // regular function definitions MUST provide an argument group to the left
+    //     // of the colon, and prop setter functions MUST provide a prop name to the
+    //     // left of the colon, so if nothing's to the left, it's not a function
+    //     const leftToken = tokens[index - 1];
+    //     if (_.isUndefined(leftToken))                       return false;
+
+
+    //     const linesBeforeColon   = this.linesBetween(token, leftToken);
+    //     const columnsBeforeColon = this.columnsBetween(token, leftToken);
+    //     if (linesBeforeColon > 0 || columnsBeforeColon > 0) return false;
+
+    //     // for regular function definitions, e.g.,
+    //     //   def foo(a, b):Str "#{a} foos #{b}!"   # hoisted, returns a string
+    //     //   foo = (a, b):Str "#{a}#{b}"           # not hoisted, returns a string
+    //     //   foo = (a, b): console.log(a, b)       # not hoisted, returns null
+    //     //   foo = (a, b):                         # not hoisted, returns null, no-op is valid
+
+    //     // if it provides an argument group before the colon, it's valid, and it
+    //     // allows anything to follow (no-op is also valid)
+    //     if (leftToken.name === 'closeParen')                return true;
+
+    //     // for prop setter definitions within proto shape body, e.g.,
+    //     //   breed:Str set "#{breed} is da best!"  # explicit setter; prop name is passed as implicit argument
+    //     //   breed:Str "husky"                     # defaults to 'husky'; short for breed:Str set breed || "husky"
+    //     //   breed:Str                             # defaults to ''; short for breed:Str set breed
+
+    //     // prop setter definitions MUST provide a non-null return type to the
+    //     // right of the colon
+    //     const rightToken = tokens[index + 1];
+    //     if (_.isUndefined(rightToken))                      return false;
+    //     if (rightToken.type !== 'word')                     return false;
+
+    //     // the return type must be DIRECTLY after the colon (in hashes there MUST
+    //     // be a space after the colon, to differentiate them from return types)
+    //     const linesAfterColon   = this.linesBetween(token, rightToken);
+    //     const columnsAfterColon = this.columnsBetween(token, rightToken);
+    //     if (linesAfterColon > 0 || columnsAfterColon > 0)   return false;
+
+    //     return true;
+    //   });
+    // }
+
+    // boundsOfFirstFunctionDefinitionInTokens(tokens) {
+    //   const colonIndex = this.indexOfFirstFunctionColon(tokens);
+    //   if (colonIndex === -1) return [];
+
+    //   const colonToken = tokens[colonIndex];
+
+    //   const stopIndex  = _.findIndex(tokens, (currentToken, index) => {
+    //     if (index < colonIndex)                       return false;
+
+    //     const nextToken = tokens[index + 1];
+    //     if (_.isUndefined(nextToken))                 return true;
+
+    //     const currentTokens = tokens.slice(colonIndex, index + 1);
+    //     if (!this.hasBalancedGrouping(currentTokens)) return false;
+    //     if (nextToken.line === currentToken.line)     return false;
+    //     if (nextToken.indent > colonToken.indent)     return false;
+
+    //     return true;
+    //   });
+
+    //   if (tokens[colonIndex - 1].name !== 'closeParen') {
+    //     return [colonIndex - 1, stopIndex]; // it's a prop definition
+    //   }
+
+    //   const tokensBeforeColon = _.first(tokens, colonIndex);
+    //   const argOpenIndex      = _.findLastIndex(tokensBeforeColon, (token, index) => {
+    //     if (token.name !== 'openParen') return false;
+    //     const currentTokens = tokensBeforeColon.slice(index);
+    //     return this.hasBalancedGrouping(currentTokens);
+    //   });
+
+    //   const nameToken      = tokens[argOpenIndex - 1];
+    //   const defToken       = tokens[argOpenIndex - 2];
+    //   const isDeclaration  = !!defToken && !!nameToken && defToken.name === 'def' && nameToken.name === 'identifier';
+    //   if (!isDeclaration) {
+    //     return [argOpenIndex, stopIndex]; // it's anonymous
+    //   }
+
+    //   return [argOpenIndex - 2, stopIndex];
+    // }
+
+    // boundsOfAllFunctionDefinitionsInTokens(tokens) {
+    //   const boundsFinderFn = _.bind(this.boundsOfFirstFunctionDefinitionInTokens, this);
+    //   return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
+    // }
+
+    // boundsOfFirstConditionalInTokens(conditionalOperatorName, tokens) {
+    //   const conditionalIndex = _.findIndex(tokens, { name: conditionalOperatorName });
+    //   if (conditionalIndex === -1) return [];
+
+    //   const conditionalToken = tokens[conditionalIndex];
+    //   const stopIndex = _.findIndex(tokens, (currentToken, index) => {
+    //     if (index < conditionalIndex)                   return false;
+
+    //     const nextToken = tokens[index + 1];
+    //     if (_.isUndefined(nextToken))                   return true;
+
+    //     const currentTokens = tokens.slice(conditionalIndex, index + 1);
+    //     if (!this.hasBalancedGrouping(currentTokens))   return false;
+    //     if (nextToken.line === currentToken.line)       return false;
+    //     if (nextToken.indent > conditionalToken.indent) return false;
+
+    //     return true;
+    //   });
+
+    //   if (stopIndex === -1) {
+    //     throw SyntaxError.at(conditionalToken, `Couldn't find the end of ${conditionalOperatorName} statement`);
+    //   }
+
+    //   return [conditionalIndex, stopIndex];
+    // }
+
+    // boundsOfFirstCheckInTokens(tokens) {
+    //   return this.boundsOfFirstConditionalInTokens('check', tokens);
+    // }
+
+    // boundsOfAllChecksInTokens(tokens) {
+    //   const boundsFinderFn = _.bind(this.boundsOfFirstCheckInTokens, this);
+    //   return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
+    // }
+
+    // boundsOfFirstGuardInTokens(tokens) {
+    //   return this.boundsOfFirstConditionalInTokens('guard', tokens);
+    // }
+
+    // boundsOfAllGuardsInTokens(tokens) {
+    //   const boundsFinderFn = _.bind(this.boundsOfFirstCheckInTokens, this);
+    //   return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
+    // }
+
+    // // assumes the tokens start with the condition... kinda janky, but that's how
+    // // it's currently used. FIXME.
+    // boundsOfFirstRocketConditionInTokens(tokens) {
+    //   const indexOfRocket = this.indexOfRocket(tokens);
+    //   if (indexOfRocket === -1) return [];
+
+    //   const boundsPairs = this.boundsOfAllStructuresInTokens(tokens);
+    //   const conditionEndIndex = _.findIndex(tokens, (token, index) => {
+    //     if (index <= indexOfRocket)          return false;
+
+    //     const isInsideStructure = this.indexIsInsideBoundsPairs(index, boundsPairs);
+    //     if (isInsideStructure)               return false;
+
+    //     const nextToken = tokens[index + 1];
+    //     if (nextToken.name === 'exhaust')    return true;
+    //     if (nextToken.line === token.line)   return false;
+    //     if (nextToken.indent > token.indent) return false;
+
+    //     return true;
+    //   });
+
+    //   if (conditionEndIndex === -1) {
+    //     throw SyntaxError.at(tokens[indexOfRocket], 'Could not find the end of the rocket condition');
+    //   }
+
+    //   return [0, conditionEndIndex];
+    // }
+
+    // boundsOfAllStructuresInTokens(tokens, options = { except: [] }) {
+    //   const { except } = options;
+    //   const allStructureTypes  = ['group', 'function', 'proto', 'check', 'guard'];
+    //   const filteredStructures = _.without(allStructureTypes, except);
+    //   const structurePairFuncs = {
+    //     group:    _.bind(this.boundsOfAllGroupsInTokens, this),
+    //     function: _.bind(this.boundsOfAllFunctionDefinitionsInTokens, this),
+    //     proto:    _.bind(this.boundsOfAllProtoDefinitionsInTokens, this),
+    //     check:    _.bind(this.boundsOfAllChecksInTokens, this),
+    //     guard:    _.bind(this.boundsOfAllGuardsInTokens, this),
+    //   }
+
+    //   return _.reduce(filteredStructures, (boundsPairs, structureType) => {
+    //     const pairsForStructure = structurePairFuncs[structureType](tokens);
+    //     return boundsPairs.concat(pairsForStructure);
+    //   }, [])
+    // }
+
+    // indexIsInsideBoundsPairs(index, boundsPairs) {
+    //   if (_.isEmpty(boundsPairs)) return false;
+    //   return _.any(boundsPairs, bounds => bounds[0] < index && index < bounds[1]);
+    // }
+
+    // indexOfFirstProto(tokens) {
+    //   const boundsPairs = this.boundsOfAllStructuresInTokens(tokens, { except: ['proto'] });
+    //   return _.findIndex(tokens, (token, index) => {
+    //     if (token.name !== 'proto') return false;
+    //     return this.indexIsInsideBoundsPairs(index, boundsPairs);
+    //   });
+    // }
+
+    // boundsOfFirstProtoDefinitionInTokens(tokens) {
+    //   const startIndex = this.indexOfFirstProto(tokens);
+    //   if (startIndex === -1) return [];
+
+    //   const protoTokens     = tokens.slice(startIndex);
+    //   const validLeftTypes  = ['word'];
+    //   const validRightTypes = [];
+    //   const indexOfFrom     = this.indexOfBinaryOperation('protoDerivation',     protoTokens, { validLeftTypes, validRightTypes })
+    //   const indexOfShaped   = this.indexOfBinaryOperation('shapeDefinition',     protoTokens, { validLeftTypes, validRightTypes })
+    //   const indexOfExtends  = this.indexOfBinaryOperation('extensionDefinition', protoTokens, { validLeftTypes, validRightTypes })
+
+    //   const lastDescriptorIndex = _.max([indexOfFrom, indexOfShaped, indexOfExtends]);
+    //   const descriptorToken     = protoTokens[lastDescriptorIndex];
+    //   if (lastDescriptorIndex === -1)          return [startIndex, startIndex + 1];
+    //   if (lastDescriptorIndex === indexOfFrom) return [startIndex, startIndex + indexOfFrom + 1];
+
+    //   const restOfTokens  = protoTokens.slice(lastDescriptorIndex);
+    //   const boundsOfBlock = this.boundsOfFirstGroupInTokens(restOfTokens);
+    //   if (_.isEmpty(boundsOfBlock)) {
+    //     throw SyntaxError.at(descriptorToken, `Expected block for ${descriptorToken.name} descriptor`);
+    //   }
+
+    //   const canonicalBounds = _.map(boundsOfBlock, boundary => boundary + startIndex + lastDescriptorIndex);
+    //   const endIndex        = canonicalBounds[1];
+    //   return [startIndex, endIndex];
+    // }
+
+    // boundsOfAllProtoDefinitionsInTokens(tokens) {
+    //   const boundsFinderFn = _.bind(this.boundsOfFirstProtoDefinitionInTokens, this);
+    //   return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
+    // }
+
+    // indexOfBinaryOperation(operationName, tokens, { validLeftTypes, validRightTypes }) {
+    //   const operatorNames = {
+    //     assignment:             ['equals'],
+    //     sequence:               ['comma'],
+    //     logicalOR:              ['or'],
+    //     logicalAND:             ['and'],
+    //     equalityComparison:     ['equalTo', 'notEqualTo'],
+    //     differentialComparison: ['greaterThan', 'greaterThanOrEqualTo', 'lessThan', 'lessThanOrEqualTo'],
+    //     subtraction:            ['minus'],
+    //     addition:               ['plus'],
+    //     division:               ['slash'],
+    //     multiplication:         ['star'],
+    //     exponentiation:         ['starStar'],
+    //     hashPair:               ['colon'],
+    //     rocketCondition:        ['rocket'],
+    //     dispatch:               ['dot'],
+    //     protoDerivation:        ['from'],
+    //     shapeDefinition:        ['shaped'],
+    //     extensionDefinition:    ['extends'],
+    //   }[operationName];
+
+    //   if (_.isEmpty(operatorNames)) throw `Invalid binary operation '${operationName}'`;
+
+    //   const allowProto  = _.contains(['protoDerivation', 'shapeDefinition', 'extensionDefinition'], operationName);
+    //   const except      = allowProto ? ['proto'] : [];
+    //   const boundsPairs = this.boundsOfAllStructuresInTokens(tokens, { except });
+
+    //   return _.findIndex(tokens, (token, index) => {
+    //     if (!_.contains(operatorNames, token.name)) return false;
+
+    //     const isInsideStructure = this.indexIsInsideBoundsPairs(index, boundsPairs);
+    //     if (isInsideStructure)                      return false;
+
+    //     const leftIsValid = (
+    //       _.contains(validLeftTypes, leftToken.type) ||
+    //       leftToken.name === 'identifier'            ||
+    //       this.isCloseGroupToken(leftToken)
+    //     );
+    //     if (!leftIsValid)                           return false;
+
+    //     const rightIsValid = (
+    //       _.contains(validRightTypes, rightToken.type) ||
+    //       rightToken.name === 'identifier'             ||
+    //       this.isOpenGroupToken(rightToken)
+    //     );
+    //     if (!rightIsValid)                          return false;
+
+    //     return true;
+    //   });
+    // }
+
+    // indexOfComparisonOperation(operationName, tokens) {
+    //   const validLeftTypes  = ['word', 'string', 'number', 'regex'];
+    //   const validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
+    //   return this.indexOfBinaryOperation(operationName, tokens, { validLeftTypes, validRightTypes });
+    // }
+
+    // indexOfAssignment(tokens) {
+    //   const validLeftTypes  = ['word'];
+    //   const validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
+    //   return this.indexOfBinaryOperation('assignment', tokens, { validLeftTypes, validRightTypes });
+    // }
+
+    // indexOfSequence(tokens) {
+    //   const validLeftTypes  = ['word', 'string', 'number', 'regex'];
+    //   const validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
+    //   return this.indexOfBinaryOperation('sequence', tokens, { validLeftTypes, validRightTypes });
+    // }
+
+    // indexOfLogicalOR(tokens) {
+    //   return this.indexOfComparisonOperation('logicalOR', tokens);
+    // }
+
+    // indexOfLogicalAND(tokens) {
+    //   return this.indexOfComparisonOperation('logicalAND', tokens);
+    // }
+
+    // indexOfEqualityComparison(tokens) {
+    //   return this.indexOfComparisonOperation('equalityComparison', tokens);
+    // }
+
+    // indexOfDifferentialComparison(tokens) {
+    //   return this.indexOfComparisonOperation('differentialComparison', tokens);
+    // }
+
+    // indexOfSubtraction(tokens) {
+    //   const validLeftTypes  = ['word', 'number', 'string'];
+    //   const validRightTypes = ['word', 'number', 'string', 'regex', 'operator'];
+    //   return this.indexOfBinaryOperation('subtraction', tokens, { validLeftTypes, validRightTypes });
+    // }
+
+    // indexOfAddition(tokens) {
+    //   const validLeftTypes  = ['word', 'number', 'string'];
+    //   const validRightTypes = ['word', 'number', 'string', 'operator'];
+    //   return this.indexOfBinaryOperation('addition', tokens, { validLeftTypes, validRightTypes });
+    // }
+
+    // indexOfDivision(tokens) {
+    //   const validLeftTypes  = ['word', 'number'];
+    //   const validRightTypes = ['word', 'number', 'regex', 'operator'];
+    //   return this.indexOfBinaryOperation('division', tokens, { validLeftTypes, validRightTypes });
+    // }
+
+    // indexOfMultiplication(tokens) {
+    //   const validLeftTypes  = ['word', 'number', 'string'];
+    //   const validRightTypes = ['word', 'number', 'operator'];
+    //   return this.indexOfBinaryOperation('multiplication', tokens, { validLeftTypes, validRightTypes });
+    // }
+
+    // indexOfExponentiation(tokens) {
+    //   const validLeftTypes  = ['word', 'number'];
+    //   const validRightTypes = ['word', 'number', 'operator'];
+    //   return this.indexOfBinaryOperation('exponentiation', tokens, { validLeftTypes, validRightTypes });
+    // }
+
+    // indexOfHashColon(tokens) {
+    //   const validLeftTypes    = ['word', 'number', 'string', 'regex'];
+    //   const validRightTypes   = ['word', 'number', 'string', 'regex', 'operator'];
+    //   const indexOfFirstColon = this.indexOfBinaryOperation('hashPair', tokens, { validLeftTypes, validRightTypes })
+    //   if (indexOfFirstColon === -1) return -1;
+
+    //   const tokenBeforeColon = tokens[indexOfFirstColon - 1];
+    //   if (_.isUndefined(tokenBeforeColon)) return -1;
+
+    //   const tokenAfterColon = tokens[indexOfFirstColon + 1];
+    //   if (_.isUndefined(tokenAfterColon)) return -1;
+
+    //   const firstColonToken   = tokens[indexOfFirstColon];
+    //   const linesBeforeColon  = this.linesBetween(tokenBeforeColon, firstColonToken);
+    //   if (linesBeforeColon > 0) return -1;
+
+    //   const linesAfterColon  = this.linesBetween(firstColonToken, tokenAfterColon);
+    //   const spacesAfterColon = this.columnsBetween(firstColonToken, tokenAfterColon);
+    //   if (linesAfterColon === 0 && spacesAfterColon === 0) return -1;
+
+    //   return indexOfFirstColon;
+    // }
+
+    // indexOfRocket(tokens) {
+    //   const validLeftTypes  = ['word', 'number', 'string', 'regex'];
+    //   const validRightTypes = ['word', 'number', 'string', 'regex', 'operator'];
+    //   return this.indexOfBinaryOperation('rocketCondition', tokens, { validLeftTypes, validRightTypes });
+    // }
+
+    // indexOfDispatch(tokens) {
+    //   const validLeftTypes  = ['word', 'number', 'string', 'regex'];
+    //   const validRightTypes = ['word'];
+    //   return this.indexOfBinaryOperation('dispatch', tokens, { validLeftTypes, validRightTypes });
+    // }
+
+    // indexOfFunctionCall(tokens, offset = 0) {
+    //   const boundsOfFirstGroup = this.boundsOfFirstGroupInTokens(tokens);
+    //   if (_.isEmpty(boundsOfFirstGroup)) return -1;
+
+    //   const indexOfOpenToken  = boundsOfFirstGroup[0];
+    //   const boundsPairs       = this.boundsOfAllStructuresInTokens(tokens, { except: 'group' });
+    //   const isInsideStructure = this.indexIsInsideBoundsPairs(index, boundsPairs);
+    //   if (isInsideStructure)             return -1;
+
+    //   const openToken = tokens[indexOfOpenToken];
+    //   const leftToken = tokens[indexOfOpenToken - 1];
+    //   if (openToken.name === 'openParen' && leftToken) {
+    //     const validTypes = ['word', 'string', 'number'];
+    //     const validNames = ['closeParen', 'closeBracket', 'closeBrace'];
+    //     if (_.contains(validTypes, leftToken.type) || _.contains(validNames, leftToken.name)) {
+    //       return indexOfOpenToken + offset;
+    //     }
+    //   }
+
+    //   const indexOfCloseToken = boundsOfFirstGroup[1];
+    //   const restOfTokens      = tokens.slice(indexOfCloseToken);
+    //   const currentOffset     = indexOfCloseToken + offset;
+    //   return this.indexOfFunctionCall(restOfTokens, currentOffset);
+    // }
+
+    // // Given a set of tokens, returns the tokens up to the end of the first line (or spanning
+    // // multiple lines if there are grouping symbols), to the end of the contiguous "statement".
+    // // Does not include the block of a function/proto definition, etc., as blocks are multiple
+    // // statements, so I'm just gonna treat the definition statement as a single entity for now
+    // // and validate/construct the definition block somewhere else.
+    // // EDIT: ...SLASH TODO: CONSIDER SURROUNDING FUNCTION DEFS W/ CURLY BRACES MAYBE
+    // firstStatementFromTokens(tokens) {
+    //   if (_.isEmpty(tokens)) return [];
+
+    //   const boundsPairs     = this.boundsOfAllStructuresInTokens(tokens);
+    //   const statementEndPos = _.findIndex(tokens, (currentToken, index) => {
+    //     const nextToken = tokens[index + 1];
+    //     if (_.isUndefined(nextToken))             return true;
+
+    //     const isInsideStructure = this.indexIsInsideBoundsPairs(index + 1, boundsPairs);
+    //     if (isInsideStructure)                    return false;
+
+    //     if (nextToken.line === currentToken.line) return false;
+
+    //     const currentTokens = _.first(tokens, index + 1);
+    //     return this.hasBalancedGrouping(currentTokens);
+    //   });
+
+    //   return _.first(tokens, statementEndPos + 1);
+    // }
+
+    // identityNode(token) {
+    //   const validIdentityTypes = ['word', 'string', 'number', 'regex'];
+    //   if (!_.contains(validIdentityTypes, token.type)) {
+    //     throw SyntaxError.at(token, 'Expected to find valid identity token');
+    //   }
+
+    //   return {
+    //     operation: 'identity',
+    //     token,
+    //   };
+    // }
+
+    // unaryOperationNode(operationName, tokens) {
+    //   const operatorToken = _.first(tokens);
+    //   const rightTokens   = _.rest(tokens);
+
+    //   const validUnaryOperatorNames = ['plus', 'minus', 'not'];
+    //   if (!_.contains(validUnaryOperatorNames, operatorToken.name)) {
+    //     throw SyntaxError.at(operatorToken, `Expected to find ${operationName}`);
+    //   }
+
+    //   return {
+    //     operation: operationName,
+    //     token:     operatorToken,
+    //     rightNode: this.pemdasNodeFromStatement(rightTokens),
+    //   };
+    // }
+
+    // binaryOperationNode(operationName, operatorIndex, tokens) {
+    //   const tokenNames = {
+    //     subtraction:    ['minus'],
+    //     addition:       ['plus'],
+    //     division:       ['slash'],
+    //     multiplication: ['star'],
+    //     exponentiation: ['starStar'],
+    //     assignment:     ['equals'],
+    //     dispatch:       ['dot'],
+    //     comparison: [
+    //       'equalTo',
+    //       'greaterThan',
+    //       'greaterThanOrEqualTo',
+    //       'lessThan',
+    //       'lessThanOrEqualTo',
+    //       'notEqualTo',
+    //     ],
+    //     boolean: [
+    //       'and',
+    //       'or',
+    //     ],
+    //   }[operationName];
+
+    //   const operatorToken = tokens[operatorIndex];
+    //   if (!_.contains(tokenNames, operatorToken.name)) {
+    //     throw SyntaxError.at(operatorToken, `Expected to find ${operationName}`);
+    //   }
+
+    //   const leftTokens = _.first(tokens, operatorIndex);
+    //   if (_.isEmpty(leftTokens)) {
+    //     throw SyntaxError.at(operatorToken, `Found no left-hand side for ${operationName}`);
+    //   }
+
+    //   const rightTokens = tokens.slice(operatorIndex + 1);
+    //   if (_.isEmpty(rightTokens)) {
+    //     throw SyntaxError.at(operatorToken, `Found no right-hand side for ${operationName}`);
+    //   }
+
+    //   return {
+    //     operation: operationName,
+    //     token:     operatorToken,
+    //     leftNode:  this.pemdasNodeFromStatement(leftTokens),
+    //     rightNode: this.pemdasNodeFromStatement(rightTokens),
+    //   };
+    // }
+
+    // sequenceNode(firstCommaIndex, tokens) {
+    //   const firstComma = tokens[firstCommaIndex];
+    //   if (firstComma.name !== 'comma') {
+    //     throw SyntaxError.at(firstComma, 'Expected to find comma');
+    //   }
+
+    //   const sequenceSets = _.reduce(tokens, (sets, token) => {
+    //     if (token.name === 'comma') {
+    //       sets.push([]);
+    //     } else {
+    //       _.last(sets).push(token);
+    //     }
+
+    //     return sets;
+    //   }, [[]]);
+
+    //   const sequenceNodes = _.map(sequenceSets, set => this.pemdasNodeFromStatement(set));
+
+    //   return {
+    //     operation:  'sequence',
+    //     startToken: _.first(tokens),
+    //     endToken:   _.last(tokens),
+    //     sequenceNodes,
+    //   };
+    // }
+
+    // groupNode(operationName, tokens) {
+    //   const correctOpenTokenName = {
+    //     parenGroup:   'openParen',
+    //     bracketGroup: 'openBracket',
+    //     braceGroup:   'openBrace',
+    //   }[operationName];
+
+    //   const openToken = _.first(tokens);
+    //   if (openToken.name !== correctOpenTokenName) {
+    //     throw SyntaxError.at(openToken, `Expected ${operationName} opening symbol`);
+    //   }
+
+    //   const closeToken = _.last(tokens);
+    //   if (!this.openTokenMatchesCloser(openToken, closeToken)) {
+    //     throw SyntaxError.at(closeToken, `Expected ${operationName} closing symbol`);
+    //   }
+
+    //   const innerTokens = tokens.slice(1, -1);
+
+    //   return {
+    //     operation: operationName,
+    //     openToken,
+    //     closeToken,
+    //     innerNode: this.pemdasNodeFromStatement(innerTokens),
+    //   };
+    // }
+
+    // startsWithPropDefinition(tokens) {
+    //   const [nameToken, colonToken, typeToken] = tokens;
+    //   if (_.isUndefined(nameToken)  || nameToken.name  !== 'identifier') return false;
+    //   if (_.isUndefined(colonToken) || colonToken.name !== 'colon')      return false;
+    //   if (_.isUndefined(typeToken)  || typeToken.type  !== 'word')       return false;
+    //   if (nameToken.line !== colonToken.line)                            return false;
+    //   if (colonToken.line !== typeToken.line)                            return false;
+
+    //   const spacesBeforeColon = this.columnsBetween(nameToken, colonToken);
+    //   const spacesAfterColon  = this.columnsBetween(colonToken, typeToken);
+    //   if (spacesBeforeColon > 0 || spacesAfterColon > 0) return false;
+
+    //   return true;
+    // }
+
+    // startsWithPropDefault(tokens) {
+    //   if (!this.startsWithPropDefinition(tokens))      return false;
+    //   const defaultToken = tokens[3];
+    //   if (defaultToken && defaultToken.name === 'set') return false;
+    //   return true;
+    // }
+
+    // startsWithPropSetter(tokens) {
+    //   if (!this.startsWithPropDefinition(tokens))             return false;
+    //   const setToken = tokens[3];
+    //   if (_.isUndefined(setToken) || setToken.name !== 'set') return false;
+    //   return true;
+    // }
+
+    // startsWithFnDeclaration(tokens) {
+    //   const [defToken, nameToken] = tokens;
+    //   if (_.isUndefined(defToken)  || defToken.name  !== 'def')        return false;
+    //   if (_.isUndefined(nameToken) || nameToken.name !== 'identifier') return false;
+
+    //   const argBounds = this.boundsOfFirstGroupInTokens(tokens);
+    //   if (argBounds[0] !== 2)                                          return false;
+
+    //   const colonToken = tokens[argBounds[1] + 1];
+    //   if (_.isUndefined(colonToken) || colonToken.name !== 'colon')    return false;
+
+    //   return true;
+    // }
+
+    // startsWithAnonFn(tokens) {
+    //   const argBounds = this.boundsOfFirstGroupInTokens(tokens);
+    //   if (argBounds[0] !== 0)                                       return false;
+
+    //   const colonToken = tokens[argBounds[1] + 1];
+    //   if (_.isUndefined(colonToken) || colonToken.name !== 'colon') return false;
+
+    //   return true;
+    // }
+
+    // linesBetween(firstToken = {}, secondToken = {}) {
+    //   return Math.abs(firstToken.line - secondToken.line);
+    // }
+
+    // columnsBetween(firstToken = { lexeme: '' }, secondToken = { lexeme: '' }) {
+    //   const [startToken, endToken] = _.sortBy([firstToken, secondToken], 'column');
+    //   const startCol = startToken.column + startToken.lexeme.length;
+    //   const endCol   = endToken.column;
+    //   return endCol - startCol;
+    // }
+
+    // anonFnDefinitionNode(tokens) {
+    //   const argBounds = this.boundsOfFirstGroupInTokens(tokens);
+    //   if (argBounds[0] !== 0) {
+    //     throw SyntaxError.at(tokens[0], 'Expected arguments to begin the anonymous function');
+    //   }
+
+    //   const colonIndex = argBounds[1] + 1;
+    //   const colonToken = tokens[colonIndex];
+    //   if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
+    //     throw SyntaxError.at(colonToken, 'Expected valid function definition');
+    //   }
+
+    //   const tokenAfterColon = tokens[colonIndex + 1];
+    //   const linesAfterColon = this.linesBetween(colonToken, tokenAfterColon);
+    //   const colsAfterColon  = this.columnsBetween(colonToken, tokenAfterColon);
+    //   const typeToken       = (linesAfterColon === 0 && colsAfterColon === 0) ? tokenAfterColon : undefined;
+    //   const argTokens       = tokens.slice(argBounds[0] + 1, argBounds[1])
+    //   const blockStartIndex = colonIndex + (_.isUndefined(typeToken) ? 1 : 2);
+    //   const blockTokens     = tokens.slice(blockStartIndex);
+
+    //   return {
+    //     operation: 'anonFnDefinition',
+    //     colonToken,
+    //     typeToken,
+    //     argumentsNode: this.pemdasNodeFromStatement(argTokens),
+    //     blockNodes:    this.traverse(blockTokens),
+    //   };
+    // }
+
+    // fnDeclarationNode(tokens) {
+    //   const defToken = tokens[0];
+    //   if (_.isUndefined(defToken) || defToken.name !== 'def') {
+    //     throw SyntaxError.at(defToken, 'Expected "def" to start the function declaration');
+    //   }
+
+    //   const nameToken = tokens[1];
+    //   if (_.isUndefined(nameToken) || nameToken.name !== 'identifier') {
+    //     throw SyntaxError.at(nameToken, 'Expected the function declaration to have a valid name');
+    //   }
+
+    //   const argBounds = this.boundsOfFirstGroupInTokens(tokens);
+    //   if (argBounds[0] !== 2) {
+    //     throw SyntaxError.at(nameToken, 'Expected arguments for function declaration after name');
+    //   }
+
+    //   const colonIndex = argBounds[1] + 1;
+    //   const colonToken = tokens[colonIndex];
+    //   if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
+    //     throw SyntaxError.at(colonToken, 'Expected valid function declaration');
+    //   }
+
+    //   const tokenAfterColon = tokens[colonIndex + 1];
+    //   const linesAfterColon = this.linesBetween(colonToken, tokenAfterColon);
+    //   const colsAfterColon  = this.columnsBetween(colonToken, tokenAfterColon);
+    //   const typeToken       = (linesAfterColon === 0 && colsAfterColon === 0) ? tokenAfterColon : undefined;
+    //   const argTokens       = tokens.slice(argBounds[0] + 1, argBounds[1]);
+    //   const blockStartIndex = colonIndex + (_.isUndefined(typeToken) ? 1 : 2);
+    //   const blockTokens     = tokens.slice(blockStartIndex);
+
+    //   return {
+    //     operation: 'fnDeclaration',
+    //     nameToken,
+    //     colonToken,
+    //     typeToken,
+    //     argumentsNode: this.pemdasNodeFromStatement(argTokens),
+    //     blockNodes:    this.traverse(blockTokens),
+    //   };
+    // }
+
+    // propDefaultNode(tokens) {
+    //   const nameToken = tokens[0];
+    //   if (_.isUndefined(nameToken) || nameToken.name !== 'identifier') {
+    //     throw SyntaxError.at(nameToken, 'Expected the prop default to have a valid name');
+    //   }
+
+    //   const colonToken = tokens[1];
+    //   if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
+    //     throw SyntaxError.at(colonToken, 'Expected valid prop default definition');
+    //   }
+
+    //   const typeToken       = tokens[2];
+    //   const linesAfterColon = this.linesBetween(colonToken, typeToken);
+    //   const colsAfterColon  = this.columnsBetween(colonToken, typeToken);
+    //   const typePosIsValid  = linesAfterColon === 0 && colsAfterColon === 0;
+    //   if (_.isUndefined(typeToken) || !typePosIsValid || typeToken.type !== 'word') {
+    //     throw SyntaxError.at(colonToken, 'Prop must specify a type');
+    //   }
+
+    //   const blockTokens = tokens.slice(3);
+
+    //   return {
+    //     operation: 'propDefault',
+    //     nameToken,
+    //     colonToken,
+    //     typeToken,
+    //     blockNodes: this.traverse(blockTokens),
+    //   };
+    // }
+
+    // propSetterNode(tokens) {
+    //   const nameToken = tokens[0];
+    //   if (_.isUndefined(nameToken) || nameToken.name !== 'identifier') {
+    //     throw SyntaxError.at(nameToken, 'Expected the prop default to have a valid name');
+    //   }
+
+    //   const colonToken = tokens[1];
+    //   if (_.isUndefined(colonToken) || colonToken.name !== 'colon') {
+    //     throw SyntaxError.at(colonToken, 'Expected valid prop default definition');
+    //   }
+
+    //   const typeToken       = tokens[2];
+    //   const linesAfterColon = this.linesBetween(colonToken, typeToken);
+    //   const colsAfterColon  = this.columnsBetween(colonToken, typeToken);
+    //   const typePosIsValid  = linesAfterColon === 0 && colsAfterColon === 0;
+    //   if (_.isUndefined(typeToken) || !typePosIsValid || typeToken.type !== 'word') {
+    //     throw SyntaxError.at(colonToken, 'Prop must specify a type');
+    //   }
+
+    //   const setToken       = tokens[3];
+    //   const linesAfterType = this.linesBetween(typeToken, setToken);
+    //   if (_.isUndefined(setToken) || linesAfterType !== 0) {
+    //     throw SyntaxError.at(typeToken, 'Expected prop setter "set" keyword after specifying type');
+    //   }
+
+    //   const blockTokens = tokens.slice(4);
+
+    //   return {
+    //     operation: 'propSetter',
+    //     nameToken,
+    //     colonToken,
+    //     typeToken,
+    //     blockNodes: this.traverse(blockTokens),
+    //   };
+    // }
+
+    // functionCallNode(indexOfOpenToken, tokens) {
+    //   const openToken = tokens[indexOfOpenToken];
+    //   const leftToken = tokens[indexOfOpenToken - 1];
+
+    //   if (!openToken || !leftToken || openToken.name !== 'openParen') {
+    //     throw SyntaxError.at(openToken, 'Expected function call');
+    //   }
+
+    //   const validLeftTypes = ['word', 'string', 'number'];
+    //   const validLeftNames = ['closeParen', 'closeBracket', 'closeBrace'];
+    //   if (!(_.contains(validLeftTypes, leftToken.type) || _.contains(validLeftNames, leftToken.name))) {
+    //     throw SyntaxError.at(leftToken, 'Invalid function callee');
+    //   }
+
+    //   const calleeTokens = _.first(tokens, indexOfOpenToken);
+    //   const restOfTokens = tokens.slice(indexOfOpenToken);
+    //   const boundsOfArgs = this.boundsOfFirstGroupInTokens(restOfTokens);
+
+    //   if (_.isEmpty(boundsOfArgs)) {
+    //     throw SyntaxError.at(openToken, 'Incomplete argument group for function call');
+    //   }
+
+    //   const closeToken      = restOfTokens[boundsOfArgs[1]];
+    //   const argumentsTokens = restOfTokens.slice(boundsOfArgs[0] + 1, boundsOfArgs[1]);
+
+    //   return {
+    //     operation: 'functionCall',
+    //     openToken,
+    //     closeToken,
+    //     calleeNode:    this.pemdasNodeFromStatement(calleeTokens),
+    //     argumentsNode: this.pemdasNodeFromStatement(argumentsTokens),
+    //   };
+    // }
+
+    // hashPairNode(indexOfHashColon, tokens) {
+    //   const colonToken = tokens[indexOfHashColon];
+    //   if (colonToken.name !== 'colon') {
+    //     throw SyntaxError.at(colonToken, 'Expected to find a hash pair colon');
+    //   }
+
+    //   const leftTokens = _.first(tokens, indexOfHashColon);
+    //   if (_.isEmpty(leftTokens)) {
+    //     throw SyntaxError.at(colonToken, 'Found no left-hand side (key) for the hash pair');
+    //   }
+
+    //   const rightTokens = tokens.slice(indexOfHashColon + 1);
+    //   if (_.isEmpty(rightTokens)) {
+    //     throw SyntaxError.at(colonToken, 'Found no right-hand side (value) for the hash pair');
+    //   }
+
+    //   return {
+    //     operation: 'hashPair',
+    //     token:     colonToken,
+    //     keyNode:   this.pemdasNodeFromStatement(leftTokens),
+    //     valueNode: this.pemdasNodeFromStatement(rightTokens),
+    //   };
+    // }
+
+    // protoDefinitionNode(tokens) {
+    //   const protoToken = tokens[0];
+    //   if (protoToken.name !== 'proto') throw SyntaxError.at(protoToken, 'Expected proto definition to begin');
+
+    //   const validLeftTypes  = ['word'];
+    //   const validRightTypes = [];
+    //   const indexOfFrom     = this.indexOfBinaryOperation('protoDerivation',     tokens, { validLeftTypes, validRightTypes });
+    //   const indexOfShaped   = this.indexOfBinaryOperation('shapeDefinition',     tokens, { validLeftTypes, validRightTypes });
+    //   const indexOfExtends  = this.indexOfBinaryOperation('extensionDefinition', tokens, { validLeftTypes, validRightTypes });
+
+    //   const derivationToken       = tokens[indexOfFrom] && tokens[indexOfFrom + 1];
+    //   const shapeBlockBounds      = indexOfShaped  === -1 ? [] : this.boundsOfFirstGroupInTokens(tokens.slice(indexOfShaped));
+    //   const extendBlockBounds     = indexOfExtends === -1 ? [] : this.boundsOfFirstGroupInTokens(tokens.slice(indexOfExtends));
+    //   const canonicalShapeBounds  = _.map(shapeBlockBounds,  boundary => boundary + indexOfShaped);
+    //   const canonicalExtendBounds = _.map(extendBlockBounds, boundary => boundary + indexOfExtends);
+
+    //   // hacky bullshit that needs to be rewritten ASAP
+    //   const shapeTokens     = tokens.slice((canonicalShapeBounds[0]  || -1) + 1, (canonicalShapeBounds[1]  || 0));
+    //   const extensionTokens = tokens.slice((canonicalExtendBounds[0] || -1) + 1, (canonicalExtendBounds[1] || 0));
+
+    //   return {
+    //     operation: 'protoDefinition',
+    //     protoToken,
+    //     derivationToken,
+    //     shapeBlockNodes:  this.traverse(shapeTokens),
+    //     extendBlockNodes: this.traverse(extensionTokens),
+    //   };
+    // }
+
+    // rocketConditionNode(tokens) {
+    //   const rocketIndex = this.indexOfRocket(tokens);
+    //   if (rocketIndex === -1) {
+    //     throw SyntaxError.at(tokens[0], 'Expected rocket condition to begin');
+    //   }
+
+    //   const boundsOfCondish = this.boundsOfFirstRocketConditionInTokens(tokens);
+    //   const [startIndex, endIndex] = boundsOfCondish;
+    //   if (startIndex !== 0) {
+    //     throw SyntaxError.at(tokens[0], 'Expected rocket condition to begin');
+    //   }
+
+    //   const rocketToken = tokens[rocketIndex];
+    //   const leftTokens  = _.first(tokens, rocketIndex);
+    //   const rightTokens = tokens.slice(rocketIndex + 1, endIndex);
+
+    //   return {
+    //     operation: 'rocketCondition',
+    //     rocketToken,
+    //     leftNodes:  this.traverse(leftTokens),
+    //     rightNodes: this.traverse(rightTokens),
+    //   };
+    // }
+
+    // exhaustConditionNode(tokens) {
+    //   const exhaustToken = tokens[0];
+    //   if (exhaustToken.name !== 'exhaust') {
+    //     throw SyntaxError.at(exhaustToken, 'Expected exhaust condition to begin');
+    //   }
+
+    //   return {
+    //     operation: 'exhaustCondition',
+    //     exhaustToken,
+    //     rightNodes: this.traverse(tokens.slice(1)),
+    //   };
+    // }
+
+    // conditionNodes(tokens, nodeList = []) {
+    //   const indexOfRocket = this.indexOfRocket(tokens);
+    //   if (indexOfRocket === -1) {
+    //     if (firstToken.name === 'exhaust') {
+    //       const exhaustNode = this.exhaustConditionNode(tokens);
+    //       nodeList.push(exhaustNode);
+    //     }
+    //     return nodeList;
+    //   }
+
+    //   const boundsOfCondition = this.boundsOfFirstRocketConditionInTokens(tokens);
+    //   if (_.isEmpty(boundsOfCondition)) {
+    //     throw SyntaxError.at(tokens[indexOfRocket], 'Expected rocket condition');
+    //   }
+
+    //   const [conditionStartIndex, conditionEndIndex] = boundsOfCondition;
+    //   const conditionTokens = tokens.slice(conditionStartIndex, conditionEndIndex + 1);
+    //   const rocketNode      = this.rocketConditionNode(conditionTokens);
+    //   const restOfTokens    = tokens.slice(conditionEndIndex + 1);
+    //   nodeList.push(rocketNode);
+
+    //   return this.conditionNodes(restOfTokens, nodeList);
+    // }
+
+    // conditionalNode(conditionalOperatorName, tokens) {
+    //   const conditionalToken = tokens[0];
+    //   if (conditionalToken.name !== conditionalOperatorName) {
+    //     throw SyntaxError.at(conditionalToken, `Expected ${conditionalOperatorName} to begin`);
+    //   }
+
+    //   const tokenName       = `${conditionalOperatorName}Token`;
+    //   const argBounds       = this.boundsOfFirstGroupInTokens(tokens);
+    //   const argOpenIndex    = argBounds[0];
+    //   const argCloseIndex   = argBounds[1];
+    //   const hasArgs         = argOpenIndex === 1 && tokens[1].name === 'openParen';
+    //   const argumentsNode   = hasArgs ? this.pemdasNodeFromStatement(tokens.slice(argOpenIndex + 1, argCloseIndex)) : undefined;
+    //   const boundsOfCondish = this.boundsOfFirstConditionalInTokens(conditionalOperatorName, tokens);
+    //   const blockStartIndex = hasArgs ? argCloseIndex + 1 : 1;
+    //   const blockEndIndex   = boundsOfCondish[1];
+    //   const blockTokens     = tokens.slice(blockStartIndex, blockEndIndex + 1);
+
+    //   return {
+    //     operation:   conditionalOperatorName,
+    //     [tokenName]: conditionalToken,
+    //     argumentsNode,
+    //     conditionNodes: this.conditionNodes(blockTokens),
+    //   };
+    // }
+
+    // checkNode(tokens) {
+    //   return this.conditionalNode('check', tokens);
+    // }
+
+    // guardNode(tokens) {
+    //   return this.conditionalNode('guard', tokens);
+    // }
+
+    // pemdasNodeFromStatement(statementTokens) {
+    //   if (_.isEmpty(statementTokens)) {
+    //     return null;
+    //   }
+
+    //   if (statementTokens.length === 1) {
+    //     return this.identityNode(statementTokens[0]);
+    //   }
+
+    //   const indexOfSequence = this.indexOfSequence(statementTokens);
+    //   if (indexOfSequence !== -1) {
+    //     return this.sequenceNode(indexOfSequence, statementTokens);
+    //   }
+
+    //   const indexOfAssignment = this.indexOfAssignment(statementTokens);
+    //   if (indexOfAssignment !== -1) {
+    //     return this.binaryOperationNode('assignment', indexOfAssignment, statementTokens);
+    //   }
+
+    //   const indexOfLogicalOR = this.indexOfLogicalOR(statementTokens);
+    //   if (indexOfLogicalOR !== -1) {
+    //     return this.binaryOperationNode('boolean', indexOfLogicalOR, statementTokens);
+    //   }
+
+    //   const indexOfLogicalAND = this.indexOfLogicalAND(statementTokens);
+    //   if (indexOfLogicalAND !== -1) {
+    //     return this.binaryOperationNode('boolean', indexOfLogicalAND, statementTokens);
+    //   }
+
+    //   const indexOfEqualityComparison = this.indexOfEqualityComparison(statementTokens);
+    //   if (indexOfEqualityComparison !== -1) {
+    //     return this.binaryOperationNode('comparison', indexOfEqualityComparison, statementTokens);
+    //   }
+
+    //   const indexOfDifferentialComparison = this.indexOfDifferentialComparison(statementTokens);
+    //   if (indexOfDifferentialComparison !== -1) {
+    //     return this.binaryOperationNode('comparison', indexOfDifferentialComparison, statementTokens);
+    //   }
+
+    //   const indexOfAddition      = this.indexOfAddition(statementTokens);
+    //   const indexOfSubtraction   = this.indexOfSubtraction(statementTokens);
+    //   const firstLinearMathIndex = _.min(_.without([indexOfAddition, indexOfSubtraction], -1));
+    //   switch (firstLinearMathIndex) {
+    //     case indexOfAddition:    return this.binaryOperationNode('addition',    indexOfAddition,    statementTokens);
+    //     case indexOfSubtraction: return this.binaryOperationNode('subtraction', indexOfSubtraction, statementTokens);
+    //     default: break; // to satisfy eslint
+    //   }
+
+    //   const indexOfDivision       = this.indexOfDivision(statementTokens);
+    //   const indexOfMultiplication = this.indexOfMultiplication(statementTokens);
+    //   const firstPlanarMathIndex  = _.min(_.without([indexOfDivision, indexOfMultiplication], -1));
+    //   switch (firstPlanarMathIndex) {
+    //     case indexOfDivision:       return this.binaryOperationNode('division',       indexOfDivision,       statementTokens);
+    //     case indexOfMultiplication: return this.binaryOperationNode('multiplication', indexOfMultiplication, statementTokens);
+    //     default: break; // to satisfy eslint
+    //   }
+
+    //   const indexOfExponentiation = this.indexOfExponentiation(statementTokens);
+    //   if (indexOfExponentiation !== -1) {
+    //     return this.binaryOperationNode('exponentiation', indexOfExponentiation, statementTokens);
+    //   }
+
+    //   const firstToken = _.first(statementTokens);
+    //   switch (firstToken.name) {
+    //     case 'minus': return this.unaryOperationNode('negation',       statementTokens);
+    //     case 'plus':  return this.unaryOperationNode('substantiation', statementTokens);
+    //     case 'not':   return this.unaryOperationNode('inversion',      statementTokens);
+    //     case 'proto': return this.protoDefinitionNode(statementTokens);
+    //     case 'check': return this.checkNode(statementTokens);
+    //     case 'guard': return this.guardNode(statementTokens);
+    //     default: break; // to satisfy eslint
+    //   }
+
+    //   const indexOfHashColon = this.indexOfHashColon(statementTokens);
+    //   if (indexOfHashColon !== -1) {
+    //     return this.hashPairNode(indexOfHashColon, statementTokens);
+    //   }
+
+    //   const isAnonymousFn   = this.startsWithAnonFn(statementTokens);
+    //   const isFnDeclaration = !isAnonymousFn && this.startsWithFnDeclaration(statementTokens);
+    //   const isPropDefault   = !isAnonymousFn && !isFnDeclaration && this.startsWithPropDefault(statementTokens);
+    //   const isPropSetter    = !isAnonymousFn && !isFnDeclaration && !isPropDefault && this.startsWithPropSetter(statementTokens);
+
+    //   switch (true) {
+    //     case isAnonymousFn:   return this.anonFnDefinitionNode(statementTokens);
+    //     case isFnDeclaration: return this.fnDeclarationNode(statementTokens);
+    //     case isPropDefault:   return this.propDefaultNode(statementTokens);
+    //     case isPropSetter:    return this.propSetterNode(statementTokens);
+    //     default: break; // to satisfy eslint
+    //   }
+
+    //   const indexOfDispatch     = this.indexOfDispatch(statementTokens);
+    //   const indexOfFunctionCall = this.indexOfFunctionCall(statementTokens);
+    //   const firstAccessionIndex = _.min(_.without([indexOfDispatch, indexOfFunctionCall], -1));
+    //   switch (firstAccessionIndex) {
+    //     case indexOfDispatch:     return this.binaryOperationNode('dispatch', indexOfDispatch, statementTokens);
+    //     case indexOfFunctionCall: return this.functionCallNode(indexOfFunctionCall, statementTokens);
+    //     default: break; // to satisfy eslint
+    //   }
+
+    //   switch (firstToken.name) {
+    //     case 'openParen':   return this.groupNode('parenGroup',   statementTokens);
+    //     case 'openBracket': return this.groupNode('bracketGroup', statementTokens);
+    //     case 'openBrace':   return this.groupNode('braceGroup',   statementTokens);
+    //     default: break; // to satisfy eslint
+    //   }
+
+    //   const lastToken = _.last(statementTokens);
+    //   throw SyntaxError.between(firstToken, lastToken, 'Unrecognized statement');
+    // }
+
+  }]);
+
+  return Syntaxer;
+}();
+
+exports.default = Syntaxer;
+
+},{"../leaves/node":6,"../parse/token_parser":9,"underscore":1}],4:[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var LexError = function () {
+  function LexError(text) {
+    _classCallCheck(this, LexError);
+
+    this.parser = new StringParser(text);
+  }
+
+  _createClass(LexError, [{
+    key: "at",
+    value: function at(charIndex) {
+      var message = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : "Lexer error";
+
+      var lineNum = this.parser.lineNumAt(charIndex);
+      var colNum = this.parser.colNumAt(charIndex);
+      var line = this.parser.lineAt(charIndex);
+      var errorDesc = message + " at L" + lineNum + "/C" + colNum;
+      var errorLine = "\n  " + line + "...";
+      var errorMark = " " + ' '.repeat(line.length) + "^";
+      throw [errorDesc, errorLine, errorMark].join("\n");
+    }
+  }]);
+
+  return LexError;
+}();
+
+var SyntaxError = function () {
+  function SyntaxError() {
+    _classCallCheck(this, SyntaxError);
+  }
+
+  _createClass(SyntaxError, null, [{
+    key: "at",
+    value: function at(token) {
+      var message = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : "Syntax error";
+
+      var position = "L" + token.line + "/C" + token.column;
+      return message + " at " + position;
+    }
+  }, {
+    key: "between",
+    value: function between(startToken, endToken) {
+      var message = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : "Syntax error";
+
+      var startPos = "L" + startToken.line + "/C" + startToken.column;
+      var endPos = "L" + endToken.line + "/C" + endToken.column;
+      return message + " between " + startPos + " and " + endPos;
+    }
+  }]);
+
+  return SyntaxError;
+}();
+
+exports.LexError = LexError;
+exports.SyntaxError = SyntaxError;
+
+},{}],5:[function(require,module,exports){
+'use strict';
+
+var _underscore = require('underscore');
+
+var _underscore2 = _interopRequireDefault(_underscore);
+
+var _lexer = require('./build/lexer.js');
+
+var _lexer2 = _interopRequireDefault(_lexer);
+
+var _syntaxer = require('./build/syntaxer.js');
+
+var _syntaxer2 = _interopRequireDefault(_syntaxer);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+// for testing it out in chrome/dev tools... don't judge
+window.addEventListener('load', function () {
+  window._ = _underscore2.default;
+  window.Lexer = _lexer2.default;
+  window.Syntaxer = _syntaxer2.default;
+  window.fileText = "foo = 'me \"says\":'\ndef bar(baz):Str\n  abc = 'hi, how\\'s it going?'\n  return baz + abc\n\n# this is just a comment\nbar(foo)";
+  window.lex = new _lexer2.default(window.fileText);
+
+  var brainstormXHR = new XMLHttpRequest();
+  brainstormXHR.open('GET', '/brainstorm.stone');
+  brainstormXHR.onreadystatechange = function (event) {
+    if (event.target.readyState === 4) {
+      window.stoneFileText = event.target.responseText;
+      window.stoneLex = new _lexer2.default(window.stoneFileText);
+      window.stoneSyn = new _syntaxer2.default(window.stoneLex.traverse());
+    }
+  };
+  brainstormXHR.send();
+
+  var simpleTestXHR = new XMLHttpRequest();
+  simpleTestXHR.open('GET', '/test.stone');
+  simpleTestXHR.onreadystatechange = function (event) {
+    if (event.target.readyState === 4) {
+      window.simpleTestText = event.target.responseText;
+      window.simpleTestLex = new _lexer2.default(window.simpleTestText);
+      window.simpleTestSyn = new _syntaxer2.default(window.simpleTestLex.traverse());
+    }
+  };
+  simpleTestXHR.send();
+});
+
+},{"./build/lexer.js":2,"./build/syntaxer.js":3,"underscore":1}],6:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _slicedToArray = function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; }();
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _underscore = require('underscore');
+
+var _underscore2 = _interopRequireDefault(_underscore);
+
+var _syntaxer = require('../build/syntaxer');
+
+var _syntaxer2 = _interopRequireDefault(_syntaxer);
+
+var _token_parser = require('../parse/token_parser');
+
+var _token_parser2 = _interopRequireDefault(_token_parser);
+
+var _token_util = require('../utils/token_util');
+
+var _token_util2 = _interopRequireDefault(_token_util);
+
+var _errors = require('../errors/errors');
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var Node = function () {
+  function Node() {
+    _classCallCheck(this, Node);
+  }
+
+  _createClass(Node, null, [{
+    key: 'identity',
+    value: function identity(token) {
+      var validTypes = ['word', 'string', 'number', 'regex'];
+      if (!_underscore2.default.contains(validTypes, token.type)) {
+        throw _errors.SyntaxError.at(token, 'Expected to find valid identity token');
+      }
+
+      return {
+        operation: 'identity',
+        token: token
+      };
+    }
+  }, {
+    key: 'unaryOperation',
+    value: function unaryOperation(operationName, tokens) {
+      var operatorToken = _underscore2.default.first(tokens);
+      var rightTokens = _underscore2.default.rest(tokens);
+
+      var validNames = ['plus', 'minus', 'not'];
+      if (!_underscore2.default.contains(validNames, operatorToken.name)) {
+        throw _errors.SyntaxError.at(operatorToken, 'Expected to find ' + operationName);
+      }
+
+      return {
+        operation: operationName,
+        token: operatorToken,
+        rightNode: this.fromStatement(rightTokens)
+      };
+    }
+  }, {
+    key: 'binaryOperation',
+    value: function binaryOperation(operationName, operatorIndex, tokens) {
+      var tokenNames = {
+        subtraction: ['minus'],
+        addition: ['plus'],
+        division: ['slash'],
+        multiplication: ['star'],
+        exponentiation: ['starStar'],
+        assignment: ['equals'],
+        dispatch: ['dot'],
+        equalityComparison: ['equalTo', 'notEqualTo'],
+        differentialComparison: ['greaterThan', 'greaterThanOrEqualTo', 'lessThan', 'lessThanOrEqualTo'],
+        boolean: ['and', 'or']
+      }[operationName];
+
+      var operatorToken = tokens[operatorIndex];
+      if (!_underscore2.default.contains(tokenNames, operatorToken.name)) {
+        throw _errors.SyntaxError.at(operatorToken, 'Expected to find ' + operationName);
+      }
+
+      var leftTokens = _underscore2.default.first(tokens, operatorIndex);
+      if (_underscore2.default.isEmpty(leftTokens)) {
+        throw _errors.SyntaxError.at(operatorToken, 'Found no left-hand side for ' + operationName);
+      }
+
+      var rightTokens = tokens.slice(operatorIndex + 1);
+      if (_underscore2.default.isEmpty(rightTokens)) {
+        throw _errors.SyntaxError.at(operatorToken, 'Found no right-hand side for ' + operationName);
+      }
+
+      return {
+        operation: operationName,
+        token: operatorToken,
+        leftNode: this.fromStatement(leftTokens),
+        rightNode: this.fromStatement(rightTokens)
+      };
+    }
+  }, {
+    key: 'sequence',
+    value: function sequence(firstCommaIndex, tokens) {
+      var _this = this;
+
+      var firstComma = tokens[firstCommaIndex];
+      if (firstComma.name !== 'comma') {
+        throw _errors.SyntaxError.at(firstComma, 'Expected to find comma');
+      }
+
+      var sequenceSets = _underscore2.default.reduce(tokens, function (sets, token) {
+        if (token.name === 'comma') {
+          sets.push([]);
+        } else {
+          _underscore2.default.last(sets).push(token);
+        }
+
+        return sets;
+      }, [[]]);
+
+      var sequenceNodes = _underscore2.default.map(sequenceSets, function (set) {
+        return _this.fromStatement(set);
+      });
+
+      return {
+        operation: 'sequence',
+        startToken: _underscore2.default.first(tokens),
+        endToken: _underscore2.default.last(tokens),
+        sequenceNodes: sequenceNodes
+      };
+    }
+  }, {
+    key: 'group',
+    value: function group(operationName, tokens) {
+      var correctOpenTokenName = {
+        parenGroup: 'openParen',
+        bracketGroup: 'openBracket',
+        braceGroup: 'openBrace'
+      }[operationName];
+
+      var openToken = _underscore2.default.first(tokens);
+      if (openToken.name !== correctOpenTokenName) {
+        throw _errors.SyntaxError.at(openToken, 'Expected ' + operationName + ' opening symbol');
+      }
+
+      var closeToken = _underscore2.default.last(tokens);
+      if (!_token_util2.default.openTokenMatchesCloser(openToken, closeToken)) {
+        throw _errors.SyntaxError.at(closeToken, 'Expected ' + operationName + ' closing symbol');
+      }
+
+      var innerTokens = tokens.slice(1, -1);
+
+      return {
+        operation: operationName,
+        openToken: openToken,
+        closeToken: closeToken,
+        innerNode: this.fromStatement(innerTokens)
+      };
+    }
+  }, {
+    key: 'anonFnDefinition',
+    value: function anonFnDefinition(tokens) {
+      var parser = new _token_parser2.default(tokens);
+      var argBounds = parser.boundsOfFirstGroup();
+      if (argBounds[0] !== 0) {
+        throw _errors.SyntaxError.at(tokens[0], 'Expected arguments to begin the anonymous function');
+      }
+
+      var colonIndex = argBounds[1] + 1;
+      var colonToken = tokens[colonIndex];
+      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') {
+        throw _errors.SyntaxError.at(colonToken, 'Expected valid function definition');
+      }
+
+      var tokenAfterColon = tokens[colonIndex + 1];
+      var linesAfterColon = _token_util2.default.linesBetween(colonToken, tokenAfterColon);
+      var colsAfterColon = _token_util2.default.columnsBetween(colonToken, tokenAfterColon);
+      var typeToken = linesAfterColon === 0 && colsAfterColon === 0 ? tokenAfterColon : undefined;
+      var argTokens = tokens.slice(argBounds[0] + 1, argBounds[1]);
+      var blockStartIndex = colonIndex + (_underscore2.default.isUndefined(typeToken) ? 1 : 2);
+      var blockTokens = tokens.slice(blockStartIndex);
+      var blockSyntaxer = new _syntaxer2.default(blockTokens);
+
+      return {
+        operation: 'anonFnDefinition',
+        colonToken: colonToken,
+        typeToken: typeToken,
+        argumentsNode: this.fromStatement(argTokens),
+        blockNodes: blockSyntaxer.traverse()
+      };
+    }
+  }, {
+    key: 'fnDeclaration',
+    value: function fnDeclaration(tokens) {
+      var defToken = tokens[0];
+      if (_underscore2.default.isUndefined(defToken) || defToken.name !== 'def') {
+        throw _errors.SyntaxError.at(defToken, 'Expected "def" to start the function declaration');
+      }
+
+      var nameToken = tokens[1];
+      if (_underscore2.default.isUndefined(nameToken) || nameToken.name !== 'identifier') {
+        throw _errors.SyntaxError.at(nameToken, 'Expected the function declaration to have a valid name');
+      }
+
+      var parser = new _token_parser2.default(tokens);
+      var argBounds = parser.boundsOfFirstGroup();
+      if (argBounds[0] !== 2) {
+        throw _errors.SyntaxError.at(nameToken, 'Expected arguments for function declaration after name');
+      }
+
+      var colonIndex = argBounds[1] + 1;
+      var colonToken = tokens[colonIndex];
+      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') {
+        throw _errors.SyntaxError.at(colonToken, 'Expected valid function declaration');
+      }
+
+      var tokenAfterColon = tokens[colonIndex + 1];
+      var linesAfterColon = _token_util2.default.linesBetween(colonToken, tokenAfterColon);
+      var colsAfterColon = _token_util2.default.columnsBetween(colonToken, tokenAfterColon);
+      var typeToken = linesAfterColon === 0 && colsAfterColon === 0 ? tokenAfterColon : undefined;
+      var argTokens = tokens.slice(argBounds[0] + 1, argBounds[1]);
+      var blockStartIndex = colonIndex + (_underscore2.default.isUndefined(typeToken) ? 1 : 2);
+      var blockTokens = tokens.slice(blockStartIndex);
+      var blockSyntaxer = new _syntaxer2.default(blockTokens);
+
+      return {
+        operation: 'fnDeclaration',
+        nameToken: nameToken,
+        colonToken: colonToken,
+        typeToken: typeToken,
+        argumentsNode: this.fromStatement(argTokens),
+        blockNodes: blockSyntaxer.traverse()
+      };
+    }
+  }, {
+    key: 'propDefault',
+    value: function propDefault(tokens) {
+      var nameToken = tokens[0];
+      if (_underscore2.default.isUndefined(nameToken) || nameToken.name !== 'identifier') {
+        throw _errors.SyntaxError.at(nameToken, 'Expected the prop default to have a valid name');
+      }
+
+      var colonToken = tokens[1];
+      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') {
+        throw _errors.SyntaxError.at(colonToken, 'Expected valid prop default definition');
+      }
+
+      var typeToken = tokens[2];
+      var linesAfterColon = _token_util2.default.linesBetween(colonToken, typeToken);
+      var colsAfterColon = _token_util2.default.columnsBetween(colonToken, typeToken);
+      var typePosIsValid = linesAfterColon === 0 && colsAfterColon === 0;
+      if (_underscore2.default.isUndefined(typeToken) || !typePosIsValid || typeToken.type !== 'word') {
+        throw _errors.SyntaxError.at(colonToken, 'Prop must specify a type');
+      }
+
+      var blockTokens = tokens.slice(3);
+      var blockSyntaxer = new _syntaxer2.default(blockTokens);
+
+      return {
+        operation: 'propDefault',
+        nameToken: nameToken,
+        colonToken: colonToken,
+        typeToken: typeToken,
+        blockNodes: blockSyntaxer.traverse()
+      };
+    }
+  }, {
+    key: 'propSetter',
+    value: function propSetter(tokens) {
+      var nameToken = tokens[0];
+      if (_underscore2.default.isUndefined(nameToken) || nameToken.name !== 'identifier') {
+        throw _errors.SyntaxError.at(nameToken, 'Expected the prop default to have a valid name');
+      }
+
+      var colonToken = tokens[1];
+      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') {
+        throw _errors.SyntaxError.at(colonToken, 'Expected valid prop default definition');
+      }
+
+      var typeToken = tokens[2];
+      var linesAfterColon = _token_util2.default.linesBetween(colonToken, typeToken);
+      var colsAfterColon = _token_util2.default.columnsBetween(colonToken, typeToken);
+      var typePosIsValid = linesAfterColon === 0 && colsAfterColon === 0;
+      if (_underscore2.default.isUndefined(typeToken) || !typePosIsValid || typeToken.type !== 'word') {
+        throw _errors.SyntaxError.at(colonToken, 'Prop must specify a type');
+      }
+
+      var setToken = tokens[3];
+      var linesAfterType = _token_util2.default.linesBetween(typeToken, setToken);
+      if (_underscore2.default.isUndefined(setToken) || linesAfterType !== 0) {
+        throw _errors.SyntaxError.at(typeToken, 'Expected prop setter "set" keyword after specifying type');
+      }
+
+      var blockTokens = tokens.slice(4);
+      var blockSyntaxer = new _syntaxer2.default(blockTokens);
+
+      return {
+        operation: 'propSetter',
+        nameToken: nameToken,
+        colonToken: colonToken,
+        typeToken: typeToken,
+        blockNodes: blockSyntaxer.traverse()
+      };
+    }
+  }, {
+    key: 'protoDefinition',
+    value: function protoDefinition(tokens) {
+      var protoToken = tokens[0];
+      if (protoToken.name !== 'proto') throw _errors.SyntaxError.at(protoToken, 'Expected proto definition to begin');
+
+      var parser = new _token_parser2.default(tokens);
+      var indexOfFrom = parser.indexOfFrom();
+      var indexOfShaped = parser.indexOfShaped();
+      var indexOfExtends = parser.indexOfExtends();
+      var derivationToken = tokens[indexOfFrom] && tokens[indexOfFrom + 1];
+
+      var shapeBlockBounds = indexOfShaped === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfShaped), 'openBrace');
+      var extendBlockBounds = indexOfExtends === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfExtends), 'openBrace');
+
+      var canonicalShapeBounds = _underscore2.default.map(shapeBlockBounds, function (boundary) {
+        return boundary + indexOfShaped;
+      });
+      var canonicalExtendsBounds = _underscore2.default.map(extendBlockBounds, function (boundary) {
+        return boundary + indexOfExtends;
+      });
+
+      var shapeOpenIndex = canonicalShapeBounds[0];
+      var shapeCloseIndex = canonicalShapeBounds[1];
+      var shapeTokens = _underscore2.default.isEmpty(shapeBlockBounds) ? [] : tokens.slice(shapeOpenIndex + 1, shapeCloseIndex);
+
+      var extendsOpenIndex = canonicalExtendsBounds[0];
+      var extendsCloseIndex = canonicalExtendsBounds[1];
+      var extendsTokens = _underscore2.default.isEmpty(extendsBlockBounds) ? [] : tokens.slice(extendsOpenIndex + 1, extendsCloseIndex);
+
+      var shapeSyntaxer = new _syntaxer2.default(shapeTokens);
+      var extendsSyntaxer = new _syntaxer2.default(extendsTokens);
+
+      return {
+        operation: 'protoDefinition',
+        protoToken: protoToken,
+        derivationToken: derivationToken,
+        shapeBlockNodes: shapeSyntaxer.traverse(),
+        extendBlockNodes: extendsSyntaxer.traverse()
+      };
+    }
+  }, {
+    key: 'functionCall',
+    value: function functionCall(indexOfOpenToken, tokens) {
+      var openToken = tokens[indexOfOpenToken];
+      var leftToken = tokens[indexOfOpenToken - 1];
+
+      if (!openToken || !leftToken || openToken.name !== 'openParen') {
+        throw _errors.SyntaxError.at(openToken, 'Expected function call');
+      }
+
+      var validLeftTypes = ['word', 'string', 'number'];
+      var validLeftNames = ['closeParen', 'closeBracket', 'closeBrace'];
+      if (!(_underscore2.default.contains(validLeftTypes, leftToken.type) || _underscore2.default.contains(validLeftNames, leftToken.name))) {
+        throw _errors.SyntaxError.at(leftToken, 'Invalid function callee');
+      }
+
+      var calleeTokens = _underscore2.default.first(tokens, indexOfOpenToken);
+      var restOfTokens = tokens.slice(indexOfOpenToken);
+      var parser = new _token_parser2.default(restOfTokens);
+      var boundsOfArgs = parser.boundsOfFirstGroup();
+
+      if (_underscore2.default.isEmpty(boundsOfArgs)) {
+        throw _errors.SyntaxError.at(openToken, 'Incomplete argument group for function call');
+      }
+
+      var closeToken = restOfTokens[boundsOfArgs[1]];
+      var argumentsTokens = restOfTokens.slice(boundsOfArgs[0] + 1, boundsOfArgs[1]);
+
+      return {
+        operation: 'functionCall',
+        openToken: openToken,
+        closeToken: closeToken,
+        calleeNode: this.fromStatement(calleeTokens),
+        argumentsNode: this.fromStatement(argumentsTokens)
+      };
+    }
+  }, {
+    key: 'hashPair',
+    value: function hashPair(indexOfHashColon, tokens) {
+      var colonToken = tokens[indexOfHashColon];
+      if (colonToken.name !== 'colon') {
+        throw _errors.SyntaxError.at(colonToken, 'Expected to find a hash pair colon');
+      }
+
+      var leftTokens = _underscore2.default.first(tokens, indexOfHashColon);
+      if (_underscore2.default.isEmpty(leftTokens)) {
+        throw _errors.SyntaxError.at(colonToken, 'Found no left-hand side (key) for the hash pair');
+      }
+
+      var rightTokens = tokens.slice(indexOfHashColon + 1);
+      if (_underscore2.default.isEmpty(rightTokens)) {
+        throw _errors.SyntaxError.at(colonToken, 'Found no right-hand side (value) for the hash pair');
+      }
+
+      return {
+        operation: 'hashPair',
+        token: colonToken,
+        keyNode: this.fromStatement(leftTokens),
+        valueNode: this.fromStatement(rightTokens)
+      };
+    }
+  }, {
+    key: 'rocketCondition',
+    value: function rocketCondition(tokens) {
+      var rocketIndex = indexOfRocket(tokens);
+      if (rocketIndex === -1) {
+        throw _errors.SyntaxError.at(tokens[0], 'Expected rocket condition to begin');
+      }
+
+      var boundsOfCondish = boundsOfFirstRocketConditionInTokens(tokens);
+
+      var _boundsOfCondish = _slicedToArray(boundsOfCondish, 2),
+          startIndex = _boundsOfCondish[0],
+          endIndex = _boundsOfCondish[1];
+
+      if (startIndex !== 0) {
+        throw _errors.SyntaxError.at(tokens[0], 'Expected rocket condition to begin');
+      }
+
+      var rocketToken = tokens[rocketIndex];
+      var leftTokens = _underscore2.default.first(tokens, rocketIndex);
+      var rightTokens = tokens.slice(rocketIndex + 1, endIndex);
+      var leftSyntaxer = new _syntaxer2.default(leftTokens);
+      var rightSyntaxer = new _syntaxer2.default(rightTokens);
+
+      return {
+        operation: 'rocketCondition',
+        rocketToken: rocketToken,
+        leftNodes: leftSyntaxer.traverse(),
+        rightNodes: rightSyntaxer.traverse()
+      };
+    }
+  }, {
+    key: 'exhaustCondition',
+    value: function exhaustCondition(tokens) {
+      var exhaustToken = tokens[0];
+      if (exhaustToken.name !== 'exhaust') {
+        throw _errors.SyntaxError.at(exhaustToken, 'Expected exhaust condition to begin');
+      }
+
+      var rightNodes = tokens.slice(1);
+      var rightSyntaxer = new _syntaxer2.default(rightNodes);
+
+      return {
+        operation: 'exhaustCondition',
+        exhaustToken: exhaustToken,
+        rightNodes: rightSyntaxer.traverse()
+      };
+    }
+  }, {
+    key: 'conditionNodes',
+    value: function conditionNodes(tokens) {
+      var nodeList = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
+
+      var indexOfRocket = indexOfRocket(tokens);
+      if (indexOfRocket === -1) {
+        if (firstToken.name === 'exhaust') {
+          var exhaustNode = this.exhaustCondition(tokens);
+          nodeList.push(exhaustNode);
+        }
+        return nodeList;
+      }
+
+      var boundsOfCondition = boundsOfFirstRocketConditionInTokens(tokens);
+      if (_underscore2.default.isEmpty(boundsOfCondition)) {
+        throw _errors.SyntaxError.at(tokens[indexOfRocket], 'Expected rocket condition');
+      }
+
+      var _boundsOfCondition = _slicedToArray(boundsOfCondition, 2),
+          conditionStartIndex = _boundsOfCondition[0],
+          conditionEndIndex = _boundsOfCondition[1];
+
+      var conditionTokens = tokens.slice(conditionStartIndex, conditionEndIndex + 1);
+      var rocketNode = this.rocketCondition(conditionTokens);
+      var restOfTokens = tokens.slice(conditionEndIndex + 1);
+      nodeList.push(rocketNode);
+
+      return this.conditionNodes(restOfTokens, nodeList);
+    }
+  }, {
+    key: 'conditional',
+    value: function conditional(conditionalOperatorName, tokens) {
+      var _ref;
+
+      var conditionalToken = tokens[0];
+      if (conditionalToken.name !== conditionalOperatorName) {
+        throw _errors.SyntaxError.at(conditionalToken, 'Expected ' + conditionalOperatorName + ' to begin');
+      }
+
+      var tokenName = conditionalOperatorName + 'Token';
+      var parser = new _token_parser2.default(tokens);
+      var argBounds = parser.boundsOfFirstGroup();
+      var argOpenIndex = argBounds[0];
+      var argCloseIndex = argBounds[1];
+      var hasArgs = argOpenIndex === 1 && tokens[1].name === 'openParen';
+      var argsTokens = hasArgs ? tokens.slice(argOpenIndex + 1, argCloseIndex) : [];
+      var argumentsNode = this.fromStatement(argsTokens);
+      var boundsOfCondish = parser.boundsOfFirstConditional(conditionalOperatorName);
+      var blockStartIndex = hasArgs ? argCloseIndex + 1 : 1;
+      var blockEndIndex = boundsOfCondish[1];
+      var blockTokens = tokens.slice(blockStartIndex, blockEndIndex + 1);
+
+      return _ref = {
+        operation: conditionalOperatorName
+      }, _defineProperty(_ref, tokenName, conditionalToken), _defineProperty(_ref, 'argumentsNode', argumentsNode), _defineProperty(_ref, 'conditionNodes', this.conditionNodes(blockTokens)), _ref;
+    }
+  }, {
+    key: 'check',
+    value: function check(tokens) {
+      return this.conditional('check', tokens);
+    }
+  }, {
+    key: 'guard',
+    value: function guard(tokens) {
+      return this.conditional('guard', tokens);
+    }
+  }, {
+    key: 'slide',
+    value: function slide(tokens) {
+      return this.conditional('slide', tokens);
+    }
+  }, {
+    key: 'identityIfValid',
+    value: function identityIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var tokens = options.parser ? options.parser.tokens : options.tokens;
+      if (tokens.length !== 1) return null;
+      return this.identity(tokens[0]);
+    }
+  }, {
+    key: 'sequenceIfValid',
+    value: function sequenceIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var sequenceIndex = parser.indexOfSequence();
+      if (sequenceIndex === -1) return null;
+      return this.sequence(sequenceIndex, tokens);
+    }
+  }, {
+    key: 'assignmentIfValid',
+    value: function assignmentIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var assignmentIndex = parser.indexOfAssignment();
+      if (assignmentIndex === -1) return null;
+      return this.binaryOperation('assignment', assignmentIndex, tokens);
+    }
+  }, {
+    key: 'logicalORIfValid',
+    value: function logicalORIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var logicalORIndex = parser.indexOfLogicalOR(tokens);
+      if (logicalORIndex === -1) return null;
+      return this.binaryOperation('boolean', logicalORIndex, tokens);
+    }
+  }, {
+    key: 'logicalANDIfValid',
+    value: function logicalANDIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var logicalANDIndex = parser.indexOfLogicalAND(tokens);
+      if (logicalANDIndex === -1) return null;
+      return this.binaryOperation('boolean', logicalANDIndex, tokens);
+    }
+  }, {
+    key: 'equalityComparisonIfValid',
+    value: function equalityComparisonIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var equalityComparisonIndex = parser.indexOfEqualityComparison(tokens);
+      if (equalityComparisonIndex === -1) return null;
+      return this.binaryOperation('equalityComparison', equalityComparisonIndex, tokens);
+    }
+  }, {
+    key: 'differentialComparisonIfValid',
+    value: function differentialComparisonIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var differentialComparisonIndex = parser.indexOfDifferentialComparison(tokens);
+      if (differentialComparisonIndex === -1) return null;
+      return this.binaryOperation('differentialComparison', differentialComparisonIndex, tokens);
+    }
+  }, {
+    key: 'linearMathIfValid',
+    value: function linearMathIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var additionIndex = parser.indexOfAddition(tokens);
+      var subtractionIndex = parser.indexOfSubtraction(tokens);
+      var firstLinearMathIndex = _underscore2.default.min(_underscore2.default.without([additionIndex, subtractionIndex], -1));
+      switch (firstLinearMathIndex) {
+        case additionIndex:
+          return this.binaryOperation('addition', additionIndex, tokens);
+        case subtractionIndex:
+          return this.binaryOperation('subtraction', subtractionIndex, tokens);
+        default:
+          return null;
+      }
+    }
+  }, {
+    key: 'planarMathIfValid',
+    value: function planarMathIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var multiplicationIndex = parser.indexOfAddition(tokens);
+      var divisionIndex = parser.indexOfSubtraction(tokens);
+      var firstPlanarMathIndex = _underscore2.default.min(_underscore2.default.without([multiplicationIndex, divisionIndex], -1));
+      switch (firstPlanarMathIndex) {
+        case multiplicationIndex:
+          return this.binaryOperation('multiplication', multiplicationIndex, tokens);
+        case divisionIndex:
+          return this.binaryOperation('division', divisionIndex, tokens);
+        default:
+          return null;
+      }
+    }
+  }, {
+    key: 'exponentiationIfValid',
+    value: function exponentiationIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var exponentiationIndex = parser.indexOfExponentiation(tokens);
+      if (exponentiationIndex === -1) return null;
+      return this.binaryOperation('exponentiation', exponentiationIndex, tokens);
+    }
+  }, {
+    key: 'unaryOperationIfValid',
+    value: function unaryOperationIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var tokens = options.parser ? options.parser.tokens : options.tokens;
+      var firstToken = _underscore2.default.first(tokens);
+      switch (firstToken.name) {
+        case 'minus':
+          return this.unaryOperation('negation', tokens);
+        case 'plus':
+          return this.unaryOperation('substantiation', tokens);
+        case 'not':
+          return this.unaryOperation('inversion', tokens);
+        default:
+          return null;
+      }
+    }
+  }, {
+    key: 'protoIfValid',
+    value: function protoIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var tokens = options.parser ? options.parser.tokens : options.tokens;
+      var firstToken = _underscore2.default.first(tokens);
+      if (firstToken.name !== 'proto') return null;
+      return this.protoDefinition(tokens);
+    }
+  }, {
+    key: 'conditionalIfValid',
+    value: function conditionalIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var tokens = options.parser ? options.parser.tokens : options.tokens;
+      var firstToken = _underscore2.default.first(tokens);
+      switch (firstToken.name) {
+        case 'check':
+          return this.check(tokens);
+        case 'guard':
+          return this.guard(tokens);
+        default:
+          return null;
+      }
+    }
+  }, {
+    key: 'hashPairIfValid',
+    value: function hashPairIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var hashColonIndex = parser.indexOfHashColon(tokens);
+      if (hashColonIndex === -1) return null;
+      return this.hashPairNode(hashColonIndex, tokens);
+    }
+  }, {
+    key: 'functionDefinitionIfValid',
+    value: function functionDefinitionIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var isAnonymousFn = parser.startsWithAnonFn(tokens);
+      var isFnDeclaration = !isAnonymousFn && parser.startsWithFnDeclaration(tokens);
+      var isPropDefault = !isAnonymousFn && !isFnDeclaration && parser.startsWithPropDefault(tokens);
+      var isPropSetter = !isAnonymousFn && !isFnDeclaration && !isPropDefault && parser.startsWithPropSetter(tokens);
+      switch (true) {
+        case isAnonymousFn:
+          return this.anonFnDefinition(tokens);
+        case isFnDeclaration:
+          return this.fnDeclaration(tokens);
+        case isPropDefault:
+          return this.propDefault(tokens);
+        case isPropSetter:
+          return this.propSetter(tokens);
+        default:
+          return null;
+      }
+    }
+  }, {
+    key: 'functionActionIfValid',
+    value: function functionActionIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var parser = options.parser || new _token_parser2.default(options.tokens);
+      var tokens = options.tokens || parser.tokens;
+      var dispatchIndex = parser.indexOfDispatch(tokens);
+      var functionCallIndex = parser.indexOfFunctionCall(tokens);
+      var firstAccessionIndex = _underscore2.default.min(_underscore2.default.without([dispatchIndex, functionCallIndex], -1));
+      switch (firstAccessionIndex) {
+        case dispatchIndex:
+          return this.binaryOperationNode('dispatch', indexOfDispatch, tokens);
+        case functionCallIndex:
+          return this.functionCallNode(functionCallIndex, tokens);
+        default:
+          return null;
+      }
+    }
+  }, {
+    key: 'groupIfValid',
+    value: function groupIfValid() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { tokens: [], parser: null };
+
+      var tokens = options.parser ? options.parser.tokens : options.tokens;
+      var firstToken = _underscore2.default.first(tokens);
+      switch (firstToken.name) {
+        case 'openParen':
+          return this.group('parenGroup', tokens);
+        case 'openBracket':
+          return this.group('bracketGroup', tokens);
+        case 'openBrace':
+          return this.group('braceGroup', tokens);
+        default:
+          return null;
+      }
+    }
+  }, {
+    key: 'fromStatement',
+    value: function fromStatement(tokens) {
+      if (_underscore2.default.isEmpty(tokens)) return null;
+      var parser = new _token_parser2.default(tokens);
+
+      var identityNode = this.identityIfValid({ parser: parser });
+      if (identityNode) return identityNode;
+
+      var sequenceNode = this.sequenceIfValid({ parser: parser });
+      if (sequenceNode) return sequenceNode;
+
+      var assignmentNode = this.assignmentIfValid({ parser: parser });
+      if (assignmentNode) return assignmentNode;
+
+      var logicalORNode = this.logicalORIfValid({ parser: parser });
+      if (logicalORNode) return logicalORNode;
+
+      var logicalANDNode = this.logicalANDIfValid({ parser: parser });
+      if (logicalANDNode) return logicalANDNode;
+
+      var equalityComparisonNode = this.equalityComparisonIfValid({ parser: parser });
+      if (equalityComparisonNode) return equalityComparisonNode;
+
+      var differentialComparisonNode = this.differentialComparisonIfValid({ parser: parser });
+      if (differentialComparisonNode) return differentialComparisonNode;
+
+      var linearMathNode = this.linearMathIfValid({ parser: parser });
+      if (linearMathNode) return linearMathNode;
+
+      var planarMathNode = this.planarMathIfValid({ parser: parser });
+      if (planarMathNode) return planarMathNode;
+
+      var exponentiationNode = this.exponentiationIfValid({ parser: parser });
+      if (exponentiationNode) return exponentiationNode;
+
+      var unaryOperationNode = this.unaryOperationIfValid({ tokens: tokens });
+      if (unaryOperationNode) return unaryOperationNode;
+
+      var protoNode = this.protoIfValid({ tokens: tokens });
+      if (protoNode) return protoNode;
+
+      var conditionalNode = this.conditionalIfValid({ tokens: tokens });
+      if (conditionalNode) return conditionalNode;
+
+      var hashPairNode = this.hashPairIfValid({ parser: parser });
+      if (hashPairNode) return hashPairNode;
+
+      var functionDefinitionNode = this.functionDefinitionIfValid({ parser: parser });
+      if (functionDefinitionNode) return functionDefinitionNode;
+
+      var functionActionNode = this.functionActionIfValid({ parser: parser });
+      if (functionActionNode) return functionActionNode;
+
+      var groupNode = this.groupIfValid({ tokens: tokens });
+      if (groupNode) return groupNode;
+
+      var firstToken = _underscore2.default.first(tokens);
+      var lastToken = _underscore2.default.last(tokens);
+      throw _errors.SyntaxError.between(firstToken, lastToken, 'Unrecognized statement');
+    }
+  }]);
+
+  return Node;
+}();
+
+exports.default = Node;
+
+},{"../build/syntaxer":3,"../errors/errors":4,"../parse/token_parser":9,"../utils/token_util":11,"underscore":1}],7:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _underscore = require('underscore');
+
+var _underscore2 = _interopRequireDefault(_underscore);
+
+var _string_parser = require('../parse/string_parser');
+
+var _string_parser2 = _interopRequireDefault(_string_parser);
+
+var _errors = require('../errors/errors');
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var Token = function () {
+  function Token() {
+    _classCallCheck(this, Token);
+  }
+
+  _createClass(Token, null, [{
+    key: 'firstFrom',
+    value: function firstFrom(fileText) {
+      var options = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : { at: 0 };
+
+      var charIndex = options.at || 0;
+      var fileParser = new _string_parser2.default(fileText);
+      var restParser = new _string_parser2.default(fileParser.textAfter(charIndex));
+
+      var type = restParser.leadingType();
+      if (_underscore2.default.isUndefined(type)) throw new _errors.LexError(fileText).at(charIndex, 'Token type is undefined');
+
+      var lexeme = restParser.leadingLexeme();
+      if (_underscore2.default.isEmpty(lexeme)) throw new _errors.LexError(fileText).at(charIndex, 'Token lexeme is empty');
+
+      var name = restParser.leadingName();
+      if (_underscore2.default.isUndefined(name)) throw new _errors.LexError(fileText).at(charIndex, 'Token name is undefined');
+
+      var line = fileParser.lineNumAt(charIndex);
+      var column = fileParser.colNumAt(charIndex);
+      var indent = fileParser.indentLevelAt(charIndex);
+
+      return {
+        type: type,
+        lexeme: lexeme,
+        name: name,
+        line: line,
+        column: column,
+        indent: indent
+      };
+    }
+  }]);
+
+  return Token;
+}();
+
+exports.default = Token;
+
+},{"../errors/errors":4,"../parse/string_parser":8,"underscore":1}],8:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _underscore = require('underscore');
+
+var _underscore2 = _interopRequireDefault(_underscore);
+
+var _token_util = require('../utils/token_util');
+
+var _token_util2 = _interopRequireDefault(_token_util);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var StringParser = function () {
+  function StringParser(string) {
+    var options = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+
+    _classCallCheck(this, StringParser);
+
+    this.string = string; // please don't mutate this.
+    this.spacesPerTab = options.spacesPerTab || 2;
+  }
+
+  _createClass(StringParser, [{
+    key: 'textUpTo',
+    value: function textUpTo(charIndex) {
+      return this.string.slice(0, charIndex + 1);
+    }
+  }, {
+    key: 'linesUpTo',
+    value: function linesUpTo(charIndex) {
+      return this.textUpTo(charIndex).split(/\n/);
+    }
+  }, {
+    key: 'textAfter',
+    value: function textAfter(charIndex) {
+      return this.string.slice(charIndex);
+    }
+  }, {
+    key: 'lineAt',
+    value: function lineAt(charIndex) {
+      return _underscore2.default.last(this.linesUpTo(charIndex));
+    }
+  }, {
+    key: 'lineNumAt',
+    value: function lineNumAt(charIndex) {
+      return this.linesUpTo(charIndex).length;
+    }
+  }, {
+    key: 'colNumAt',
+    value: function colNumAt(charIndex) {
+      return this.lineAt(charIndex).length;
+    }
+  }, {
+    key: 'indentLevelAt',
+    value: function indentLevelAt(charIndex) {
+      // replace tabs with spaces, then match leading single spaces
+      var tabSpaces = ' '.repeat(this.spacesPerTab);
+      var spacedLine = this.lineAt(charIndex).replace(/\t/g, tabSpaces);
+      var indent = spacedLine.match(/^ +/);
+      return indent ? indent[0].length : 0;
+    }
+  }, {
+    key: 'tokenTypesForFirstChar',
+    value: function tokenTypesForFirstChar() {
+      this._firstCharTypes = this._firstCharTypes || _token_util2.default.typesForFirstChar(this.string);
+      return this._firstCharTypes;
+    }
+  }, {
+    key: 'leadingType',
+    value: function leadingType() {
+      this._leadingType = this._leadingType || _token_util2.default.firstTypeForString(this.string);
+      return this._leadingType;
+    }
+  }, {
+    key: 'leadingLexeme',
+    value: function leadingLexeme() {
+      var type = this.leadingType();
+      this._leadingLexeme = this._leadingLexeme || _token_util2.default.firstSubstringMatchForType(this.string, type);
+      return this._leadingLexeme;
+    }
+  }, {
+    key: 'leadingName',
+    value: function leadingName() {
+      var type = this.leadingType();
+      var lexeme = this.leadingLexeme();
+      this._leadingName = this._leadingName || _token_util2.default.nameForLexemeByType(lexeme, type);
+      return this._leadingName;
+    }
+  }]);
+
+  return StringParser;
+}();
+
+exports.default = StringParser;
+
+},{"../utils/token_util":11,"underscore":1}],9:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _slicedToArray = function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; }();
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _underscore = require('underscore');
+
+var _underscore2 = _interopRequireDefault(_underscore);
+
+var _token_util = require('../utils/token_util');
+
+var _token_util2 = _interopRequireDefault(_token_util);
+
+var _errors = require('../errors/errors');
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function tokensHaveBalancedGrouping(tokens) {
+  var openStack = [];
+  _underscore2.default.each(tokens, function (token) {
+    if (token.type !== 'grouping') return;
+
+    if (_token_util2.default.isOpenGroupToken(token)) {
+      openStack.push(token);
+      return;
+    }
+
+    if (_token_util2.default.openTokenMatchesCloser(_underscore2.default.last(openStack), token)) {
+      openStack.pop();
+    }
+  });
+
+  return _underscore2.default.isEmpty(openStack);
+}
+
+function indexIsInsideBoundsPairs(index, boundsPairs) {
+  if (_underscore2.default.isEmpty(boundsPairs)) return false;
+  return _underscore2.default.any(boundsPairs, function (bounds) {
+    return bounds[0] < index && index < bounds[1];
+  });
+}
+
+// ---------------------------------- //
+// INDEX FINDERS FOR STARTING CLAUSES //
+// ---------------------------------- //
+
+
+function lastIndexOfRocketCondition(tokens) {
+  var rocketIndex = indexOfRocketInTokens(tokens);
+  if (rocketIndex === -1) return -1;
+
+  var rocketAndRest = tokens.slice(rocketIndex);
+  var maxIndexOfCondition = lastIndexOfIndentedBlock(rocketAndRest);
+  var rocketTilMax = _underscore2.default.first(rocketAndRest, maxIndexOfCondition + 1);
+  var nestedStructureBounds = boundsOfAllStructuresInTokens(rocketTilMax);
+
+  var exhaustIndex = _underscore2.default.findIndex(rocketTilMax, function (token, index) {
+    if (token.name !== 'exhaust') return false;
+
+    var isInsideStructure = indexIsInsideBoundsPairs(index, nestedStructureBounds);
+    if (isInsideStructure) return false;
+
+    return true;
+  });
+
+  if (exhaustIndex === -1) return maxIndexOfCondition;
+
+  return rocketIndex + (exhaustIndex - 1);
+}
+
+function lastIndexOfExhaustCondition(tokens) {
+  var exhaustIndex = indexOfExhaustInTokens(tokens);
+  if (exhaustIndex === -1) return -1;
+
+  var exhaustAndRest = tokens.slice(exhaustIndex);
+  return lastIndexOfIndentedBlock(exhaustAndRest);
+}
+
+// Tokens must start with the line that constructs the indented block, e.g.,
+//
+// if tokens consist of...
+//
+//   def foo():Str 'bar'
+//                   ^-- it would return the index at this point in the tokens
+//
+// if tokens consist of...
+//
+//   def foo():Str
+//     bar = 'bar'
+//     bar + 'ista'
+//                ^-- it would return the index at this point in the tokens
+//
+// if tokens consist of...
+//
+//   def foo():Str 'bar'
+//   check (foo())   ^-- it would return the index at this point in the tokens...
+//     'bar' => console.log('foo returns bar')
+//     _> console.log('foo returned something else')
+//                                                 ^-- NOT here like you might expect
+// if tokens consist of...
+//
+//   def foo(
+//     arg1,
+//     arg2,
+//     arg3
+//   ):Str
+//     "#{arg1}, #{arg2}, and #{arg3}"
+//                                   ^-- it would return the index at this point in the tokens
+function lastIndexOfIndentedBlock(tokens) {
+  var firstToken = tokens[0];
+
+  var lastIndexBeforeIndent = _underscore2.default.findIndex(tokens, function (currentToken, index) {
+    var nextToken = tokens[index + 1];
+    if (_underscore2.default.isUndefined(nextToken)) return true;
+
+    var tokensTilNow = _underscore2.default.first(tokens, index + 1);
+    if (!tokensHaveBalancedGrouping(tokensTilNow)) return false;
+
+    return nextToken.line !== currentToken.line;
+  });
+
+  var firstIndentedTokenIndex = lastIndexBeforeIndent + 1;
+  var indentedTokensAndRest = tokens.slice(firstIndentedTokenIndex);
+  if (_underscore2.default.isEmpty(indentedTokensAndRest)) return lastIndexBeforeIndent;
+
+  var firstIndentedToken = tokens[firstIndentedTokenIndex];
+  if (firstIndentedToken.indent <= firstToken.indent) return lastIndexBeforeIndent;
+
+  var lastIndentedTokenIndex = firstIndentedTokenIndex + _underscore2.default.findIndex(indentedTokensAndRest, function (currentToken, index) {
+    var nextToken = tokens[index + 1];
+    if (_underscore2.default.isUndefined(nextToken)) return true;
+
+    var tokensTilNow = _underscore2.default.first(indentedTokensAndRest, index + 1);
+    if (!tokensHaveBalancedGrouping(tokensTilNow)) return false; // doesn't need to know about
+    // other structures, because
+    return nextToken.indent < firstIndentedToken.indent; // those other structures can't
+  }); // break the indentation rules.
+
+  return lastIndentedTokenIndex;
+}
+
+// ----------------------- //
+// ARBITRARY INDEX FINDERS //
+// ----------------------- //
+
+
+function indexOfBinaryOperation(operationName, tokens, _ref) {
+  var validLeftTypes = _ref.validLeftTypes,
+      validRightTypes = _ref.validRightTypes;
+
+  var operatorNames = {
+    assignment: ['equals'],
+    sequence: ['comma'],
+    logicalOR: ['or'],
+    logicalAND: ['and'],
+    equalityComparison: ['equalTo', 'notEqualTo'],
+    differentialComparison: ['greaterThan', 'greaterThanOrEqualTo', 'lessThan', 'lessThanOrEqualTo'],
+    subtraction: ['minus'],
+    addition: ['plus'],
+    division: ['slash'],
+    multiplication: ['star'],
+    exponentiation: ['starStar'],
+    hashPair: ['colon'],
+    rocketCondition: ['rocket'],
+    dispatch: ['dot'],
+    protoDerivation: ['from'],
+    shapeDefinition: ['shaped'],
+    extensionDefinition: ['extends']
+  }[operationName];
+
+  if (_underscore2.default.isEmpty(operatorNames)) throw 'Invalid binary operation \'' + operationName + '\'';
+
+  var allowProto = _underscore2.default.contains(['protoDerivation', 'shapeDefinition', 'extensionDefinition'], operationName);
+  var except = allowProto ? ['proto'] : [];
+  var boundsPairs = boundsOfAllStructuresInTokens(tokens, { except: except });
+
+  return _underscore2.default.findIndex(tokens, function (token, index) {
+    if (!_underscore2.default.contains(operatorNames, token.name)) return false;
+
+    var isInsideStructure = indexIsInsideBoundsPairs(index, boundsPairs);
+    if (isInsideStructure) return false;
+
+    var leftToken = tokens[index - 1];
+    var leftIsValid = _underscore2.default.contains(validLeftTypes, leftToken.type) || leftToken.name === 'identifier' || _token_util2.default.isCloseGroupToken(leftToken);
+    if (!leftIsValid) return false;
+
+    var rightToken = tokens[index + 1];
+    var rightIsValid = _underscore2.default.contains(validRightTypes, rightToken.type) || rightToken.name === 'identifier' || _token_util2.default.isOpenGroupToken(rightToken);
+    if (!rightIsValid) return false;
+
+    return true;
+  });
+}
+
+function _indexOfAssignment(tokens) {
+  var validLeftTypes = ['word'];
+  var validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
+  return indexOfBinaryOperation('assignment', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function _indexOfSequence(tokens) {
+  var validLeftTypes = ['word', 'string', 'number', 'regex'];
+  var validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
+  return indexOfBinaryOperation('sequence', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function _indexOfSubtraction(tokens) {
+  var validLeftTypes = ['word', 'number', 'string'];
+  var validRightTypes = ['word', 'number', 'string', 'regex', 'operator'];
+  return indexOfBinaryOperation('subtraction', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function _indexOfAddition(tokens) {
+  var validLeftTypes = ['word', 'number', 'string'];
+  var validRightTypes = ['word', 'number', 'string', 'operator'];
+  return indexOfBinaryOperation('addition', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function _indexOfDivision(tokens) {
+  var validLeftTypes = ['word', 'number'];
+  var validRightTypes = ['word', 'number', 'regex', 'operator'];
+  return indexOfBinaryOperation('division', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function _indexOfMultiplication(tokens) {
+  var validLeftTypes = ['word', 'number', 'string'];
+  var validRightTypes = ['word', 'number', 'operator'];
+  return indexOfBinaryOperation('multiplication', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function _indexOfExponentiation(tokens) {
+  var validLeftTypes = ['word', 'number'];
+  var validRightTypes = ['word', 'number', 'operator'];
+  return indexOfBinaryOperation('exponentiation', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function _indexOfRocket(tokens) {
+  var validLeftTypes = ['word', 'number', 'string', 'regex'];
+  var validRightTypes = ['word', 'number', 'string', 'regex', 'operator'];
+  return indexOfBinaryOperation('rocketCondition', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function _indexOfDispatch(tokens) {
+  var validLeftTypes = ['word', 'number', 'string', 'regex'];
+  var validRightTypes = ['word'];
+  return indexOfBinaryOperation('dispatch', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function indexOfComparisonOperation(operationName, tokens) {
+  var validLeftTypes = ['word', 'string', 'number', 'regex'];
+  var validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
+  return indexOfBinaryOperation(operationName, tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function _indexOfLogicalOR(tokens) {
+  return indexOfComparisonOperation('logicalOR', tokens);
+}
+
+function _indexOfLogicalAND(tokens) {
+  return indexOfComparisonOperation('logicalAND', tokens);
+}
+
+function _indexOfEqualityComparison(tokens) {
+  return indexOfComparisonOperation('equalityComparison', tokens);
+}
+
+function _indexOfDifferentialComparison(tokens) {
+  return indexOfComparisonOperation('differentialComparison', tokens);
+}
+
+function _indexOfHashColon(tokens) {
+  var validLeftTypes = ['word', 'number', 'string', 'regex'];
+  var validRightTypes = ['word', 'number', 'string', 'regex', 'operator'];
+  var indexOfFirstColon = indexOfBinaryOperation('hashPair', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+  if (indexOfFirstColon === -1) return -1;
+
+  var tokenBeforeColon = tokens[indexOfFirstColon - 1];
+  if (_underscore2.default.isUndefined(tokenBeforeColon)) return -1;
+
+  var tokenAfterColon = tokens[indexOfFirstColon + 1];
+  if (_underscore2.default.isUndefined(tokenAfterColon)) return -1;
+
+  var firstColonToken = tokens[indexOfFirstColon];
+  var linesBeforeColon = _token_util2.default.linesBetween(tokenBeforeColon, firstColonToken);
+  if (linesBeforeColon > 0) return -1;
+
+  var linesAfterColon = _token_util2.default.linesBetween(firstColonToken, tokenAfterColon);
+  var spacesAfterColon = _token_util2.default.columnsBetween(firstColonToken, tokenAfterColon);
+  if (linesAfterColon === 0 && spacesAfterColon === 0) return -1;
+
+  return indexOfFirstColon;
+}
+
+function _indexOfFunctionCall(tokens) {
+  var offset = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+
+  var boundsOfFirstGroup = boundsOfFirstGroupInTokens(tokens);
+  if (_underscore2.default.isEmpty(boundsOfFirstGroup)) return -1;
+
+  var indexOfOpenToken = boundsOfFirstGroup[0];
+  var boundsPairs = boundsOfAllStructuresInTokens(tokens, { except: ['group'] });
+  var isInsideStructure = indexIsInsideBoundsPairs(index, boundsPairs);
+  if (isInsideStructure) return -1;
+
+  var openToken = tokens[indexOfOpenToken];
+  var leftToken = tokens[indexOfOpenToken - 1];
+  if (openToken.name === 'openParen' && leftToken) {
+    var validTypes = ['word', 'string', 'number'];
+    var validNames = ['closeParen', 'closeBracket', 'closeBrace'];
+    if (_underscore2.default.contains(validTypes, leftToken.type) || _underscore2.default.contains(validNames, leftToken.name)) {
+      return indexOfOpenToken + offset;
+    }
+  }
+
+  var indexOfCloseToken = boundsOfFirstGroup[1];
+  var restOfTokens = tokens.slice(indexOfCloseToken);
+  var currentOffset = indexOfCloseToken + offset;
+  return _indexOfFunctionCall(restOfTokens, currentOffset);
+}
+
+function _indexOfFunctionColon(tokens) {
+  return _underscore2.default.findIndex(tokens, function (token, index) {
+    if (token.name !== 'colon') return false;
+
+    // regular function definitions MUST provide an argument group to the left
+    // of the colon, and prop setter functions MUST provide a prop name to the
+    // left of the colon, so if nothing's to the left, it's not a function
+    var leftToken = tokens[index - 1];
+    if (_underscore2.default.isUndefined(leftToken)) return false;
+
+    var linesBeforeColon = _token_util2.default.linesBetween(token, leftToken);
+    var columnsBeforeColon = _token_util2.default.columnsBetween(token, leftToken);
+    if (linesBeforeColon > 0 || columnsBeforeColon > 0) return false;
+
+    // for regular function definitions, e.g.,
+    //   def foo(a, b):Str "#{a} foos #{b}!"   # hoisted, returns a string
+    //   foo = (a, b):Str "#{a}#{b}"           # not hoisted, returns a string
+    //   foo = (a, b): console.log(a, b)       # not hoisted, returns null
+    //   foo = (a, b):                         # not hoisted, returns null, no-op is valid
+
+    // if it provides an argument group before the colon, it's valid, and it
+    // allows anything to follow (no-op is also valid)
+    if (leftToken.name === 'closeParen') return true;
+
+    // for prop setter definitions within proto shape body, e.g.,
+    //   breed:Str set "#{breed} is da best!"  # explicit setter; prop name is passed as implicit argument
+    //   breed:Str "husky"                     # defaults to 'husky'; short for breed:Str set breed || "husky"
+    //   breed:Str                             # defaults to ''; short for breed:Str set breed
+
+    // prop setter definitions MUST provide a non-null return type to the
+    // right of the colon
+    var rightToken = tokens[index + 1];
+    if (_underscore2.default.isUndefined(rightToken)) return false;
+    if (rightToken.type !== 'word') return false;
+
+    // the return type must be DIRECTLY after the colon (in hashes there MUST
+    // be a space after the colon, to differentiate them from return types)
+    var linesAfterColon = _token_util2.default.linesBetween(token, rightToken);
+    var columnsAfterColon = _token_util2.default.columnsBetween(token, rightToken);
+    if (linesAfterColon > 0 || columnsAfterColon > 0) return false;
+
+    return true;
+  });
+}
+
+function _indexOfProto(tokens) {
+  // const boundsPairs = boundsOfAllStructuresInTokens(tokens, { except: ['proto'] });
+  // return _.findIndex(tokens, (token, index) => {
+  //   if (token.name !== 'proto') return false;
+  //   return this.indexIsInsideBoundsPairs(index, boundsPairs);
+  // });
+  return _underscore2.default.findIndex(tokens, { name: 'proto' });
+}
+
+function _indexOfFrom(tokens) {
+  var validLeftTypes = ['word'];
+  var validRightTypes = [];
+  return indexOfBinaryOperation('protoDerivation', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function _indexOfShaped(tokens) {
+  var validLeftTypes = ['word'];
+  var validRightTypes = [];
+  return indexOfBinaryOperation('shapeDefinition', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+function _indexOfExtends(tokens) {
+  var validLeftTypes = ['word'];
+  var validRightTypes = [];
+  return indexOfBinaryOperation('extensionDefinition', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
+}
+
+// ---------------------------------- //
+// BOUNDS FINDERS FOR FIRST STRUCTURE //
+// ---------------------------------- //
+
+
+// Given a set of tokens, returns the indices of the first open grouping symbol and its
+// matching closing symbol... essentially the beginning and end of the first group. Returns
+// an array: [] if there are no groups, or [openSymbolIndex, closeSymbolIndex] otherwise.
+// It will throw an error if there is no matching closing symbol for an open group.
+function boundsOfFirstGroupInTokens(tokens) {
+  var openTokenName = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : null;
+
+  var validOpenTokenNames = ['openParen', 'openBracket', 'openBrace'];
+  if (openTokenName && !_underscore2.default.contains(validOpenTokenNames, openTokenName)) {
+    throw 'TokenParserError: openTokenName argument passed to boundsOfFirstGroupInTokens must be the \'name\' property of a token representing an open grouping symbol.';
+  }
+
+  var openTokenNames = _underscore2.default.filter(validOpenTokenNames, function (name) {
+    return !openTokenName || name === openTokenName;
+  });
+  var openIndex = _underscore2.default.findIndex(tokens, function (token) {
+    return _underscore2.default.contains(openTokenNames, token.name);
+  });
+  if (openIndex < 0) return [];
+
+  var openStack = [];
+  var closeIndex = openIndex + _underscore2.default.findIndex(tokens.slice(openIndex), function (token) {
+    if (token.type !== 'grouping') return false;
+
+    if (_token_util2.default.isOpenGroupToken(token)) {
+      openStack.push(token);
+      return false;
+    }
+
+    if (_token_util2.default.openTokenMatchesCloser(_underscore2.default.last(openStack), token)) {
+      openStack.pop();
+      return _underscore2.default.isEmpty(openStack);
+    }
+
+    throw _errors.SyntaxError.at(token, 'Unmatched ' + token.name);
+  });
+
+  if (closeIndex < 0) {
+    var openToken = tokens[openIndex];
+    throw _errors.SyntaxError.at(openToken, 'Unmatched ' + openToken.name);
+  }
+
+  return [openIndex, closeIndex];
+}
+
+function boundsOfFirstFunctionDefinitionInTokens(tokens) {
+  var colonIndex = _indexOfFunctionColon(tokens);
+  if (colonIndex === -1) return [];
+
+  var colonAndRest = tokens.slice(colonIndex);
+  var stopIndex = colonIndex + lastIndexOfIndentedBlock(colonAndRest);
+  if (tokens[colonIndex - 1].name !== 'closeParen') {
+    return [colonIndex - 1, stopIndex]; // it's a prop definition
+  }
+
+  var tokensBeforeColon = _underscore2.default.first(tokens, colonIndex);
+  var argOpenIndex = _underscore2.default.findLastIndex(tokensBeforeColon, function (token, index) {
+    if (token.name !== 'openParen') return false;
+    var currentTokens = tokensBeforeColon.slice(index);
+    return tokensHaveBalancedGrouping(currentTokens);
+  });
+
+  var nameToken = tokens[argOpenIndex - 1];
+  var defToken = tokens[argOpenIndex - 2];
+  var isDeclaration = !!defToken && !!nameToken && defToken.name === 'def' && nameToken.name === 'identifier';
+  if (!isDeclaration) {
+    return [argOpenIndex, stopIndex]; // it's anonymous
+  }
+
+  return [argOpenIndex - 2, stopIndex];
+}
+
+function boundsOfFirstProtoDefinitionInTokens(tokens) {
+  var startIndex = _indexOfProto(tokens);
+  if (startIndex === -1) return [];
+
+  var protoTokens = tokens.slice(startIndex);
+  var endIndex = startIndex + lastIndexOfIndentedBlock(protoTokens);
+  return [startIndex, endIndex];
+
+  // const firstBraceGroupBounds   = boundsOfFirstGroupInTokens(protoTokens, 'openBrace');
+  // const firstOpenBraceIndex     = firstBraceGroupBounds[0];
+  // const 
+  // if (_.isUndefined(firstOpenBraceIndex)) {
+  //   return [startIndex, lastIndexOfIndentedBlock(protoTokens)];
+  // }
+
+
+  // const firstOpenBrace          = protoTokens[firstOpenBraceIndex];
+  // const tokensTilFirstBrace     = _.first(protoTokens, firstOpenBraceIndex);
+  // const lastIndexBeforeBlocks   = lastIndexOfIndentedBlock(tokensTilFirstBrace);
+  // const lastIndexBeforeBlocks   = lastIndexOfIndentedBlock(protoTokens);
+  // const firstBlockIsPartOfProto = lastIndexBeforeBlocks === firstOpenBraceIndex - 1;
+  // if (!firstBlockIsPartOfProto) return [startIndex, startIndex + lastIndexBeforeBlocks];
+
+  // const blockDescriptorToken = protoTokens[lastIndexBeforeBlocks];
+  // if (!_.contains(blockDescriptorToken.name, ['shaped', 'extends'])) {
+  //   throw SyntaxError.at(blockDescriptorToken, 'Expected "shaped" or "extends" keyword before brace group');
+  // }
+
+
+  // const 
+  // const firstOpenIsPartOfProto = lastIndexOfIndentedBlock(tokensTilFirstBrace) === firstOpenBraceIndex - 1;
+
+  // if (!firstOpenIsPartOfProto)
+  // const hasGroupGroup    = firstOpenBraceIndex !== -1 && !!firstOpenBrace && firstBraceToken.name === 'openBrace';
+  // const first
+
+
+  // // The "from" keyword should only happen at the third token of a proto definition,
+  // // at the moment. Might change in the future for, e.g., namespacing or something.
+  // const indexOfFrom     = _.findIndex(protoTokens.slice(0, 3), { name: 'from' });
+  // // The "shaped" keyword should only be within the first five tokens of a proto
+  // // definition. Might change for the same reasons "from" does.
+  // const indexOfShaped   = _.findIndex(protoTokens.slice(0, 5), { name: 'shaped' });
+  // // 
+  // const indexOfExtends  = indexOfBinaryOperation('extensionDefinition', protoTokens, { validLeftTypes, validRightTypes });
+
+  // const lastDescriptorIndex = _.max([indexOfFrom, indexOfShaped, indexOfExtends]);
+  // const descriptorToken     = protoTokens[lastDescriptorIndex];
+  // if (lastDescriptorIndex === -1)          return [startIndex, startIndex + 1];
+  // if (lastDescriptorIndex === indexOfFrom) return [startIndex, startIndex + indexOfFrom + 1];
+
+  // const restOfTokens  = protoTokens.slice(lastDescriptorIndex);
+  // const boundsOfBlock = boundsOfFirstGroupInTokens(restOfTokens);
+  // if (_.isEmpty(boundsOfBlock)) {
+  //   throw SyntaxError.at(descriptorToken, `Expected block for ${descriptorToken.name} descriptor`);
+  // }
+
+  // const canonicalBounds = _.map(boundsOfBlock, boundary => boundary + startIndex + lastDescriptorIndex);
+  // const endIndex        = canonicalBounds[1];
+  // return [startIndex, endIndex];
+}
+
+function boundsOfFirstConditionalInTokens(conditionalOperatorName, tokens) {
+  var conditionalIndex = _underscore2.default.findIndex(tokens, { name: conditionalOperatorName });
+  if (conditionalIndex === -1) return [];
+
+  var conditionalToken = tokens[conditionalIndex];
+  var conditionalAndRest = tokens.slice(conditionalIndex);
+  var stopIndex = conditionalIndex + lastIndexOfIndentedBlock(conditionalAndRest);
+  if (stopIndex < conditionalIndex) {
+    throw _errors.SyntaxError.at(conditionalToken, 'Couldn\'t find the end of ' + conditionalOperatorName + ' statement');
+  }
+
+  return [conditionalIndex, stopIndex];
+}
+
+function boundsOfFirstCheckInTokens(tokens) {
+  return boundsOfFirstConditionalInTokens('check', tokens);
+}
+
+function boundsOfFirstGuardInTokens(tokens) {
+  return boundsOfFirstConditionalInTokens('guard', tokens);
+}
+
+// --------------------------------- //
+// BOUNDS FINDERS FOR ALL STRUCTURES //
+// --------------------------------- //
+
+
+function allBoundsInTokensUsing(tokens, firstBoundsFn) {
+  var boundsPairs = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : [];
+
+  var previousPair = _underscore2.default.last(boundsPairs);
+  var startIndex = _underscore2.default.isUndefined(previousPair) ? 0 : previousPair[1] + 1;
+  var restOfTokens = tokens.slice(startIndex);
+  if (_underscore2.default.isEmpty(restOfTokens)) return boundsPairs;
+
+  var firstBounds = firstBoundsFn(restOfTokens);
+  if (_underscore2.default.isEmpty(firstBounds)) return boundsPairs;
+
+  var canonicalBounds = _underscore2.default.map(firstBounds, function (boundary) {
+    return boundary + startIndex;
+  });
+  boundsPairs.push(canonicalBounds);
+
+  return allBoundsInTokensUsing(tokens, firstBoundsFn, boundsPairs);
+}
+
+function boundsOfAllGroupsInTokens(tokens) {
+  return allBoundsInTokensUsing(tokens, boundsOfFirstGroupInTokens);
+}
+
+function boundsOfAllFunctionDefinitionsInTokens(tokens) {
+  return allBoundsInTokensUsing(tokens, boundsOfFirstFunctionDefinitionInTokens);
+}
+
+function boundsOfAllProtoDefinitionsInTokens(tokens) {
+  return allBoundsInTokensUsing(tokens, boundsOfFirstProtoDefinitionInTokens);
+}
+
+function boundsOfAllChecksInTokens(tokens) {
+  return allBoundsInTokensUsing(tokens, boundsOfFirstCheckInTokens);
+}
+
+function boundsOfAllGuardsInTokens(tokens) {
+  return allBoundsInTokensUsing(tokens, boundsOfFirstGuardInTokens);
+}
+
+function boundsOfAllStructuresInTokens(tokens) {
+  var options = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : { except: [], skipStart: false };
+  var except = options.except,
+      skipStart = options.skipStart;
+
+  var allStructureTypes = ['group', 'function', 'proto', 'check', 'guard'];
+  var filteredStructures = _underscore2.default.without(allStructureTypes, except);
+  var structurePairFuncs = {
+    group: boundsOfAllGroupsInTokens,
+    function: boundsOfAllFunctionDefinitionsInTokens,
+    proto: boundsOfAllProtoDefinitionsInTokens,
+    check: boundsOfAllChecksInTokens,
+    guard: boundsOfAllGuardsInTokens
+  };
+
+  var structureBounds = _underscore2.default.reduce(filteredStructures, function (boundsPairs, structureType) {
+    var pairsForStructure = structurePairFuncs[structureType](tokens);
+    return boundsPairs.concat(pairsForStructure);
+  }, []);
+
+  if (!skipStart || _underscore2.default.isEmpty(structureBounds)) return structureBounds;
+
+  var structureBoundsStartIndex = structureBounds[0][0] === 0 ? 1 : 0;
+  return structureBounds.slice(structureBoundsStartIndex);
+}
+
+var TokenParser = function () {
+  function TokenParser(tokens) {
+    _classCallCheck(this, TokenParser);
+
+    this.tokens = tokens;
+  }
+
+  // Given a set of tokens, returns the tokens up to the end of the first line (or spanning
+  // multiple lines if there are grouping symbols), to the end of the contiguous "statement".
+  // Does not include the block of a function/proto definition, etc., as blocks are multiple
+  // statements, so I'm just gonna treat the definition statement as a single entity for now
+  // and validate/construct the definition block somewhere else.
+  // EDIT: ...SLASH TODO: CONSIDER SURROUNDING FUNCTION DEFS W/ CURLY BRACES MAYBE
+
+
+  _createClass(TokenParser, [{
+    key: 'firstStatement',
+    value: function firstStatement() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+
+      if (_underscore2.default.isEmpty(tokens)) return [];
+
+      var boundsPairs = boundsOfAllStructuresInTokens(tokens);
+      var statementEndPos = _underscore2.default.findIndex(tokens, function (currentToken, index) {
+        var nextToken = tokens[index + 1];
+        if (_underscore2.default.isUndefined(nextToken)) return true;
+
+        var isInsideStructure = indexIsInsideBoundsPairs(index + 1, boundsPairs);
+        if (isInsideStructure) return false;
+
+        if (nextToken.line === currentToken.line) return false;
+
+        var currentTokens = _underscore2.default.first(tokens, index + 1);
+        return tokensHaveBalancedGrouping(currentTokens);
+      });
+
+      return _underscore2.default.first(tokens, statementEndPos + 1);
+    }
+  }, {
+    key: 'startsWithPropDefinition',
+    value: function startsWithPropDefinition() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+
+      var _tokens = _slicedToArray(tokens, 3),
+          nameToken = _tokens[0],
+          colonToken = _tokens[1],
+          typeToken = _tokens[2];
+
+      if (_underscore2.default.isUndefined(nameToken) || nameToken.name !== 'identifier') return false;
+      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') return false;
+      if (_underscore2.default.isUndefined(typeToken) || typeToken.type !== 'word') return false;
+      if (nameToken.line !== colonToken.line) return false;
+      if (colonToken.line !== typeToken.line) return false;
+
+      var spacesBeforeColon = _token_util2.default.columnsBetween(nameToken, colonToken);
+      var spacesAfterColon = _token_util2.default.columnsBetween(colonToken, typeToken);
+      if (spacesBeforeColon > 0 || spacesAfterColon > 0) return false;
+
+      return true;
+    }
+  }, {
+    key: 'startsWithPropDefault',
+    value: function startsWithPropDefault() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+
+      if (!this.startsWithPropDefinition(tokens)) return false;
+      var defaultToken = tokens[3];
+      if (defaultToken && defaultToken.name === 'set') return false;
+      return true;
+    }
+  }, {
+    key: 'startsWithPropSetter',
+    value: function startsWithPropSetter() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+
+      if (!this.startsWithPropDefinition(tokens)) return false;
+      var setToken = tokens[3];
+      if (_underscore2.default.isUndefined(setToken) || setToken.name !== 'set') return false;
+      return true;
+    }
+  }, {
+    key: 'startsWithFnDeclaration',
+    value: function startsWithFnDeclaration() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+
+      var _tokens2 = _slicedToArray(tokens, 2),
+          defToken = _tokens2[0],
+          nameToken = _tokens2[1];
+
+      if (_underscore2.default.isUndefined(defToken) || defToken.name !== 'def') return false;
+      if (_underscore2.default.isUndefined(nameToken) || nameToken.name !== 'identifier') return false;
+
+      var argBounds = boundsOfFirstGroupInTokens(tokens);
+      if (argBounds[0] !== 2) return false;
+
+      var colonToken = tokens[argBounds[1] + 1];
+      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') return false;
+
+      return true;
+    }
+  }, {
+    key: 'startsWithAnonFn',
+    value: function startsWithAnonFn() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+
+      var argBounds = boundsOfFirstGroupInTokens(tokens);
+      if (argBounds[0] !== 0) return false;
+
+      var colonToken = tokens[argBounds[1] + 1];
+      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') return false;
+
+      return true;
+    }
+  }, {
+    key: 'indexOfAssignment',
+    value: function indexOfAssignment() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfAssignment(tokens);
+    }
+  }, {
+    key: 'indexOfSequence',
+    value: function indexOfSequence() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfSequence(tokens);
+    }
+  }, {
+    key: 'indexOfSubtraction',
+    value: function indexOfSubtraction() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfSubtraction(tokens);
+    }
+  }, {
+    key: 'indexOfAddition',
+    value: function indexOfAddition() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfAddition(tokens);
+    }
+  }, {
+    key: 'indexOfDivision',
+    value: function indexOfDivision() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfDivision(tokens);
+    }
+  }, {
+    key: 'indexOfMultiplication',
+    value: function indexOfMultiplication() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfMultiplication(tokens);
+    }
+  }, {
+    key: 'indexOfExponentiation',
+    value: function indexOfExponentiation() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfExponentiation(tokens);
+    }
+  }, {
+    key: 'indexOfRocket',
+    value: function indexOfRocket() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfRocket(tokens);
+    }
+  }, {
+    key: 'indexOfDispatch',
+    value: function indexOfDispatch() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfDispatch(tokens);
+    }
+  }, {
+    key: 'indexOfLogicalOR',
+    value: function indexOfLogicalOR() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfLogicalOR(tokens);
+    }
+  }, {
+    key: 'indexOfLogicalAND',
+    value: function indexOfLogicalAND() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfLogicalAND(tokens);
+    }
+  }, {
+    key: 'indexOfEqualityComparison',
+    value: function indexOfEqualityComparison() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfEqualityComparison(tokens);
+    }
+  }, {
+    key: 'indexOfDifferentialComparison',
+    value: function indexOfDifferentialComparison() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfDifferentialComparison(tokens);
+    }
+  }, {
+    key: 'indexOfHashColon',
+    value: function indexOfHashColon() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfHashColon(tokens);
+    }
+  }, {
+    key: 'indexOfFunctionCall',
+    value: function indexOfFunctionCall() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfFunctionCall(tokens);
+    }
+  }, {
+    key: 'indexOfFunctionColon',
+    value: function indexOfFunctionColon() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfFunctionColon(tokens);
+    }
+  }, {
+    key: 'indexOfProto',
+    value: function indexOfProto() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfProto(tokens);
+    }
+  }, {
+    key: 'indexOfFrom',
+    value: function indexOfFrom() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfFrom(tokens);
+    }
+  }, {
+    key: 'indexOfShaped',
+    value: function indexOfShaped() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfShaped(tokens);
+    }
+  }, {
+    key: 'indexOfExtends',
+    value: function indexOfExtends() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return _indexOfExtends(tokens);
+    }
+  }, {
+    key: 'boundsOfFirstGroup',
+    value: function boundsOfFirstGroup() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return boundsOfFirstGroupInTokens(tokens);
+    }
+  }, {
+    key: 'boundsOfFirstConditional',
+    value: function boundsOfFirstConditional(operatorName) {
+      var tokens = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : this.tokens;
+      return boundsOfFirstConditionalInTokens(operatorName, tokens);
+    }
+
+    // lastIndexOfIndentedBlock(startIndex = 0) {
+    //   const firstToken      = this.tokens[startToken];
+    //   const structureBounds = this.boundsOfAllStructures({ startIndex });
+    //   return _.findIndex(this.tokens, (currentToken, index) => {
+    //     if (index < startIndex)                   return false;
+
+    //     const isInsideStructure = this.indexIsInsideBoundsPairs(index + 1, structureBounds);
+    //     if (isInsideStructure)                    return false;
+
+    //     const nextToken = this.tokens[index + 1];
+    //     if (_.isUndefined(nextToken))             return true;
+    //     if (nextToken.line === currentToken.line) return false;
+    //     if (nextToken.indent > firstToken.indent) return false;
+
+    //     return true;
+    //   });
+    // }
+
+    // // assumes the tokens start with the condition... kinda janky, but that's how
+    // // it's currently used. FIXME.
+    // boundsOfFirstRocketCondition() {
+    //   const indexOfRocket = this.indexOfRocket();
+    //   if (indexOfRocket === -1) return [];
+
+    //   const boundsPairs = this.boundsOfAllStructures();
+    //   const conditionEndIndex = _.findIndex(tokens, (token, index) => {
+    //     if (index <= indexOfRocket)          return false;
+
+    //     const isInsideStructure = this.indexIsInsideBoundsPairs(index, boundsPairs);
+    //     if (isInsideStructure)               return false;
+
+    //     const nextToken = tokens[index + 1];
+    //     if (nextToken.name === 'exhaust')    return true;
+    //     if (nextToken.line === token.line)   return false;
+    //     if (nextToken.indent > token.indent) return false;
+
+    //     return true;
+    //   });
+
+    //   if (conditionEndIndex === -1) {
+    //     throw SyntaxError.at(tokens[indexOfRocket], 'Could not find the end of the rocket condition');
+    //   }
+
+    //   return [0, conditionEndIndex];
+    // }
+
+    // // memoized per args hash
+    // boundsOfAllStructures(options = { except: [], startIndex: 0 }) {
+    //   const { except, startIndex } = options;
+    //   const allStructureTypes     = ['group', 'function', 'proto', 'check', 'guard'];
+    //   const filteredStructures    = _.without(allStructureTypes, except);
+    //   const memoKey               = `${filteredStructures},${startIndex}`;
+    //   this._boundsOfAllStructures[memoKey] = this._boundsOfAllStructures[memoKey] || (function(parser, opts = {}) {
+    //     const structurePairFuncs = {
+    //       group:    _.bind(parser.boundsOfAllGroups, parser),
+    //       function: _.bind(parser.boundsOfAllFunctionDefinitions, parser),
+    //       proto:    _.bind(parser.boundsOfAllProtoDefinitions, parser),
+    //       check:    _.bind(parser.boundsOfAllChecks, parser),
+    //       guard:    _.bind(parser.boundsOfAllGuards, parser),
+    //     };
+
+    //     const structureBounds = _.reduce(options.filteredStructures, (boundsPairs, structureType) => {
+    //       const pairsForStructure = structurePairFuncs[structureType]();
+    //       return boundsPairs.concat(pairsForStructure);
+    //     }, []);
+
+    //     if (_.isEmpty(structureBounds)) return structureBounds;
+
+    //     const boundsStartIndex = _.findIndex(structureBounds, boundsPair => startIndex <= boundsPair[0]);
+    //     return structureBounds.slice(boundsStartIndex);
+    //   })(this, { filteredStructures, startIndex });
+
+    //   return this._boundsOfAllStructures;
+    // }
+
+  }]);
+
+  return TokenParser;
+}();
+
+exports.default = TokenParser;
+
+},{"../errors/errors":4,"../utils/token_util":11,"underscore":1}],10:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+var GRAMMAR = {
   types: ['whitespace', 'comment', 'word', 'string', 'number', 'regex', 'operator', 'grouping', 'delimiter'],
 
   ignorableTypes: ['whitespace', 'comment'],
@@ -1657,7 +4930,11 @@ var TOKEN = {
     operator: {
       // dispatch
       '.': 'dot',
-      ':': 'colon', // not sure if this is more dispatch or assignment
+
+      // pairing
+      ':': 'colon',
+      '=>': 'rocket',
+      '_>': 'exhaust',
 
       // assignment
       '=': 'equals',
@@ -1705,7 +4982,7 @@ var TOKEN = {
     string: /['"]/,
     number: /[\d.]/, // no negative; leading "-" will be unary operator
     regex: /\//,
-    operator: /[-+*/=<>!&|%~$^:.]/,
+    operator: /[-+*/=<>!&|%~$^:._]/,
     grouping: /[[\](){}]/,
     delimiter: /,/
   },
@@ -1733,7 +5010,7 @@ var TOKEN = {
 
     // (operator)+
     // => match a set of predefined operators
-    operator: /^[-+*/=<>!&|%~$^:.]+/,
+    operator: /^[-+*/=<>!&|%~$^:._]+/,
 
     // (opening symbol || closing symbol)
     // can't do nested grouping with JS regexes easily; so handle
@@ -1758,158 +5035,13 @@ var TOKEN = {
     // 3. \/           -- closing slash
     // 4. [gimuy]{0,5} -- 0-5 flags
     regex: /^\/(?:[^[/\\]|\\.|\[(?:[^\]\\]|\\.)*\])*\/[gimuy]{0,5}/
-  },
-
-  typeIsSignificant: function typeIsSignificant(tokenType) {
-    return !_underscore2.default.contains(this.ignorableTypes, tokenType);
-  },
-  firstCharRegexForType: function firstCharRegexForType(type) {
-    return this.firstCharMatches[type];
-  },
-  fullRegexForType: function fullRegexForType(type) {
-    return this.fullMatches[type];
-  },
-
-
-  // returns an array of token types
-  typesForFirstChar: function typesForFirstChar(firstChar) {
-    var _this = this;
-
-    return _underscore2.default.filter(this.types, function (type) {
-      var firstCharRegex = _this.firstCharRegexForType(type);
-      return !!firstChar.match(firstCharRegex);
-    });
-  },
-
-
-  // returns a token type for a string STARTING with a token
-  typeForString: function typeForString(stringStartingWithToken) {
-    var _this2 = this;
-
-    var firstChar = stringStartingWithToken[0];
-    var possibleTypes = this.typesForFirstChar(firstChar);
-    return _underscore2.default.find(possibleTypes, function (type) {
-      var matchedStr = _this2.matchStringByType(stringStartingWithToken, type);
-      return !!matchedStr;
-    });
-  },
-
-
-  // returns a leading substring that matches the type given
-  matchStringByType: function matchStringByType(stringStartingWithToken, type) {
-    var fullRegex = this.fullRegexForType(type);
-    var matched = stringStartingWithToken.match(fullRegex);
-    return matched ? matched[0] : '';
-  },
-  nameForLexemeByType: function nameForLexemeByType(lexeme, type) {
-    var names = this.names[type];
-    if (_underscore2.default.isUndefined(names)) return 'literal';
-
-    var name = names[lexeme];
-    if (type === 'word' && _underscore2.default.isUndefined(name)) return 'identifier';
-
-    return name;
   }
 };
 
-var Lexer = function () {
-  function Lexer(options) {
-    _classCallCheck(this, Lexer);
+exports.default = GRAMMAR;
 
-    this.fileText = options.fileText;
-    this.spacesPerTab = options.spacesPerTab || 2;
-  }
-
-  _createClass(Lexer, [{
-    key: 'textUpTo',
-    value: function textUpTo(charIndex) {
-      return this.fileText.slice(0, charIndex + 1);
-    }
-  }, {
-    key: 'linesUpTo',
-    value: function linesUpTo(charIndex) {
-      return this.textUpTo(charIndex).split(/\n/);
-    }
-  }, {
-    key: 'textAfter',
-    value: function textAfter(charIndex) {
-      return this.fileText.slice(charIndex);
-    }
-  }, {
-    key: 'lineAt',
-    value: function lineAt(charIndex) {
-      return _underscore2.default.last(this.linesUpTo(charIndex));
-    }
-  }, {
-    key: 'lineNumAt',
-    value: function lineNumAt(charIndex) {
-      return this.linesUpTo(charIndex).length;
-    }
-  }, {
-    key: 'colNumAt',
-    value: function colNumAt(charIndex) {
-      return this.lineAt(charIndex).length;
-    }
-  }, {
-    key: 'indentLevelAt',
-    value: function indentLevelAt(charIndex) {
-      // replace tabs with spaces, then match leading single spaces
-      var tabSpaces = ' '.repeat(this.spacesPerTab);
-      var spacedLine = this.lineAt(charIndex).replace(/\t/g, tabSpaces);
-      var indent = spacedLine.match(/^ +/);
-      return indent ? indent[0].length : 0;
-    }
-  }, {
-    key: 'tokenError',
-    value: function tokenError(tokenProp, problemDesc, charIndex) {
-      var lineNum = this.lineNumAt(charIndex);
-      var colNum = this.colNumAt(charIndex);
-      var line = this.lineAt(charIndex);
-      var errorDesc = 'Token ' + tokenProp + ' at L' + lineNum + '/C' + colNum + ' is ' + problemDesc + '!';
-      var errorLine = '\n  ' + line + '...';
-      var errorMark = ' ' + ' '.repeat(line.length) + '^';
-      throw [errorDesc, errorLine, errorMark].join("\n");
-    }
-  }, {
-    key: 'tokenStartingAt',
-    value: function tokenStartingAt(charIndex) {
-      var line = this.lineNumAt(charIndex);
-      var column = this.colNumAt(charIndex);
-      var text = this.textAfter(charIndex);
-
-      var type = TOKEN.typeForString(text);
-      if (_underscore2.default.isUndefined(type)) throw this.tokenError('type', 'undefined', charIndex);
-
-      var lexeme = TOKEN.matchStringByType(text, type);
-      if (_underscore2.default.isEmpty(lexeme)) throw this.tokenError('lexeme', 'empty', charIndex);
-
-      var name = TOKEN.nameForLexemeByType(lexeme, type);
-      if (_underscore2.default.isUndefined(name)) throw this.tokenError('name', 'undefined', charIndex);
-
-      var indent = this.indentLevelAt(charIndex);
-      return { type: type, lexeme: lexeme, name: name, line: line, column: column, indent: indent };
-    }
-  }, {
-    key: 'traverse',
-    value: function traverse() {
-      var tokenList = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : [];
-      var currentCharIndex = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
-
-      if (currentCharIndex >= this.fileText.length) return tokenList;
-      var token = this.tokenStartingAt(currentCharIndex);
-      if (TOKEN.typeIsSignificant(token.type)) tokenList.push(token);
-      var nextCharIndex = currentCharIndex + token.lexeme.length;
-      return this.traverse(tokenList, nextCharIndex);
-    }
-  }]);
-
-  return Lexer;
-}();
-
-exports.default = Lexer;
-
-},{"underscore":1}],4:[function(require,module,exports){
-"use strict";
+},{}],11:[function(require,module,exports){
+'use strict';
 
 Object.defineProperty(exports, "__esModule", {
   value: true
@@ -1919,64 +5051,101 @@ var _slicedToArray = function () { function sliceIterator(arr, i) { var _arr = [
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
-var _underscore = require("underscore");
+var _underscore = require('underscore');
 
 var _underscore2 = _interopRequireDefault(_underscore);
+
+var _grammar = require('../utils/grammar');
+
+var _grammar2 = _interopRequireDefault(_grammar);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-function errorAt(token) {
-  var message = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : "Syntax error";
-
-  var position = "L" + token.line + "/C" + token.column;
-  return message + " at " + position;
-}
-
-function errorBetween(startToken, endToken) {
-  var message = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : "Syntax error";
-
-  var startPos = "L" + startToken.line + "/C" + startToken.column;
-  var endPos = "L" + endToken.line + "/C" + endToken.column;
-  return message + " between " + startPos + " and " + endPos;
-}
-
-var Syntaxer = function () {
-  function Syntaxer(options) {
-    _classCallCheck(this, Syntaxer);
-
-    this.tokenList = options.tokenList;
+var TokenUtil = function () {
+  function TokenUtil() {
+    _classCallCheck(this, TokenUtil);
   }
 
-  _createClass(Syntaxer, [{
-    key: "hasGroupingSymbols",
-    value: function hasGroupingSymbols(tokens) {
-      return _underscore2.default.any(tokens, function (token) {
-        return token.type === 'grouping';
+  _createClass(TokenUtil, null, [{
+    key: 'typeIsSignificant',
+    value: function typeIsSignificant(tokenType) {
+      return !_underscore2.default.contains(_grammar2.default.ignorableTypes, tokenType);
+    }
+  }, {
+    key: 'firstCharRegexForType',
+    value: function firstCharRegexForType(type) {
+      return _grammar2.default.firstCharMatches[type];
+    }
+  }, {
+    key: 'fullRegexForType',
+    value: function fullRegexForType(type) {
+      return _grammar2.default.fullMatches[type];
+    }
+  }, {
+    key: 'nameForLexemeByType',
+    value: function nameForLexemeByType(lexeme, type) {
+      var names = _grammar2.default.names[type];
+      if (_underscore2.default.isUndefined(names)) return 'literal';
+
+      var name = names[lexeme];
+      if (type === 'word' && _underscore2.default.isUndefined(name)) return 'identifier';
+
+      return name;
+    }
+
+    // returns an array of token types
+
+  }, {
+    key: 'typesForFirstChar',
+    value: function typesForFirstChar(firstChar) {
+      var _this = this;
+
+      return _underscore2.default.filter(_grammar2.default.types, function (type) {
+        var firstCharRegex = _this.firstCharRegexForType(type);
+        return !!firstChar.match(firstCharRegex);
       });
     }
+
+    // returns a token type for a string STARTING with a token
+
   }, {
-    key: "isGroup",
-    value: function isGroup(tokens) {
-      var openToken = _underscore2.default.first(tokens);
-      var closeToken = _underscore2.default.last(tokens);
-      return this.openTokenMatchesCloser(openToken, closeToken);
+    key: 'firstTypeForString',
+    value: function firstTypeForString(stringStartingWithToken) {
+      var _this2 = this;
+
+      var firstChar = stringStartingWithToken[0];
+      var possibleTypes = this.typesForFirstChar(firstChar);
+      return _underscore2.default.find(possibleTypes, function (type) {
+        var matchedStr = _this2.firstSubstringMatchForType(stringStartingWithToken, type);
+        return !!matchedStr;
+      });
+    }
+
+    // returns a leading substring that matches the type given
+
+  }, {
+    key: 'firstSubstringMatchForType',
+    value: function firstSubstringMatchForType(stringStartingWithToken, type) {
+      var fullRegex = this.fullRegexForType(type);
+      var matched = stringStartingWithToken.match(fullRegex);
+      return matched ? matched[0] : '';
     }
   }, {
-    key: "isOpenGroupToken",
+    key: 'isOpenGroupToken',
     value: function isOpenGroupToken(token) {
       if (token.type !== 'grouping') return false;
       return _underscore2.default.contains(['openParen', 'openBracket', 'openBrace'], token.name);
     }
   }, {
-    key: "isCloseGroupToken",
+    key: 'isCloseGroupToken',
     value: function isCloseGroupToken(token) {
       if (token.type !== 'grouping') return false;
       return _underscore2.default.contains(['closeParen', 'closeBracket', 'closeBrace'], token.name);
     }
   }, {
-    key: "openTokenMatchesCloser",
+    key: 'openTokenMatchesCloser',
     value: function openTokenMatchesCloser(openToken, closeToken) {
       if (_underscore2.default.isUndefined(openToken) || _underscore2.default.isUndefined(closeToken)) return false;
       if (openToken.type !== 'grouping' || closeToken.type !== 'grouping') return false;
@@ -1986,682 +5155,8 @@ var Syntaxer = function () {
       var closerIsValid = closeToken.lexeme === validCloserFor[openToken.lexeme];
       return openerIsValid && closerIsValid;
     }
-
-    // Given a set of tokens, returns true if the tokens follow valid grouping rules (all open
-    // grouping symbols are properly matched with closing symbols, or there are no groups), or
-    // false if a group is not closed properly. Throws an error for orphaned closing symbols.
-
   }, {
-    key: "hasBalancedGrouping",
-    value: function hasBalancedGrouping(tokens) {
-      var _this = this;
-
-      var openStack = [];
-      _underscore2.default.each(tokens, function (token) {
-        if (token.type !== 'grouping') return;
-
-        if (_this.isOpenGroupToken(token)) {
-          openStack.push(token);
-          return;
-        }
-
-        if (_this.openTokenMatchesCloser(_underscore2.default.last(openStack), token)) {
-          openStack.pop();
-        }
-      });
-
-      return _underscore2.default.isEmpty(openStack);
-    }
-  }, {
-    key: "findAllBoundsInTokensWith",
-    value: function findAllBoundsInTokensWith(findFirstBoundsInTokensFn, tokens) {
-      var boundsPairs = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : [];
-
-      var previousPair = _underscore2.default.last(boundsPairs);
-      var startIndex = _underscore2.default.isUndefined(previousPair) ? 0 : previousPair[1] + 1;
-      var restOfTokens = tokens.slice(startIndex);
-      if (_underscore2.default.isEmpty(restOfTokens)) return boundsPairs;
-
-      var boundsOfFirstFn = findFirstBoundsInTokensFn(restOfTokens);
-      if (_underscore2.default.isEmpty(boundsOfFirstFn)) return boundsPairs;
-
-      var canonicalBounds = _underscore2.default.map(boundsOfFirstFn, function (boundary) {
-        return boundary + startIndex;
-      });
-      boundsPairs.push(canonicalBounds);
-
-      return this.findAllBoundsInTokensWith(findFirstBoundsInTokensFn, tokens, boundsPairs);
-    }
-
-    // Given a set of tokens, returns the indices of the first open grouping symbol and its
-    // matching closing symbol... essentially the beginning and end of the first group. Returns
-    // an array: [] if there are no groups, or [openSymbolIndex, closeSymbolIndex] otherwise.
-    // It will throw an error if there is no matching closing symbol for an open group.
-
-  }, {
-    key: "boundsOfFirstGroupInTokens",
-    value: function boundsOfFirstGroupInTokens(tokens) {
-      var _this2 = this;
-
-      var openIndex = _underscore2.default.findIndex(tokens, function (token) {
-        return _this2.isOpenGroupToken(token);
-      });
-      if (openIndex < 0) return [];
-
-      var openStack = [];
-      var closeIndex = openIndex + _underscore2.default.findIndex(tokens.slice(openIndex), function (token) {
-        if (token.type !== 'grouping') return false;
-
-        if (_this2.isOpenGroupToken(token)) {
-          openStack.push(token);
-          return false;
-        }
-
-        if (_this2.openTokenMatchesCloser(_underscore2.default.last(openStack), token)) {
-          openStack.pop();
-          return _underscore2.default.isEmpty(openStack);
-        }
-
-        throw errorAt(token, "Unmatched " + token.name);
-      });
-
-      if (closeIndex < 0) {
-        var openToken = tokens[openIndex];
-        throw errorAt(openToken, "Unmatched " + openToken.name);
-      }
-
-      return [openIndex, closeIndex];
-    }
-  }, {
-    key: "boundsOfAllGroupsInTokens",
-    value: function boundsOfAllGroupsInTokens(tokens) {
-      var boundsFinderFn = _underscore2.default.bind(this.boundsOfFirstGroupInTokens, this);
-      return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
-    }
-  }, {
-    key: "indexOfFirstFunctionColon",
-    value: function indexOfFirstFunctionColon(tokens) {
-      var _this3 = this;
-
-      return _underscore2.default.findIndex(tokens, function (token, index) {
-        if (token.name !== 'colon') return false;
-
-        // regular function definitions MUST provide an argument group to the left
-        // of the colon, and prop setter functions MUST provide a prop name to the
-        // left of the colon, so if nothing's to the left, it's not a function
-        var leftToken = tokens[index - 1];
-        if (_underscore2.default.isUndefined(leftToken)) return false;
-
-        var linesBeforeColon = _this3.linesBetween(token, leftToken);
-        var columnsBeforeColon = _this3.columnsBetween(token, leftToken);
-        if (linesBeforeColon > 0 || columnsBeforeColon > 0) return false;
-
-        // for regular function definitions, e.g.,
-        //   def foo(a, b):Str "#{a} foos #{b}!"   # hoisted, returns a string
-        //   foo = (a, b):Str "#{a}#{b}"           # not hoisted, returns a string
-        //   foo = (a, b): console.log(a, b)       # not hoisted, returns null
-        //   foo = (a, b):                         # not hoisted, returns null, no-op is valid
-
-        // if it provides an argument group before the colon, it's valid, and it
-        // allows anything to follow (no-op is also valid)
-        if (leftToken.name === 'closeParen') return true;
-
-        // for prop setter definitions within proto shape body, e.g.,
-        //   breed:Str set "#{breed} is da best!"  # explicit setter; prop name is passed as implicit argument
-        //   breed:Str "husky"                     # defaults to 'husky'; short for breed:Str set breed || "husky"
-        //   breed:Str                             # defaults to ''; short for breed:Str set breed
-
-        // prop setter definitions MUST provide a non-null return type to the
-        // right of the colon
-        var rightToken = tokens[index + 1];
-        if (_underscore2.default.isUndefined(rightToken)) return false;
-        if (rightToken.type !== 'word') return false;
-
-        // the return type must be DIRECTLY after the colon (in hashes there MUST
-        // be a space after the colon, to differentiate them from return types)
-        var linesAfterColon = _this3.linesBetween(token, rightToken);
-        var columnsAfterColon = _this3.columnsBetween(token, rightToken);
-        if (linesAfterColon > 0 || columnsAfterColon > 0) return false;
-
-        return true;
-      });
-    }
-  }, {
-    key: "boundsOfFirstFunctionDefinitionInTokens",
-    value: function boundsOfFirstFunctionDefinitionInTokens(tokens) {
-      var _this4 = this;
-
-      var colonIndex = this.indexOfFirstFunctionColon(tokens);
-      if (colonIndex === -1) return [];
-
-      var colonToken = tokens[colonIndex];
-
-      var stopIndex = _underscore2.default.findIndex(tokens, function (currentToken, index) {
-        if (index < colonIndex) return false;
-
-        var nextToken = tokens[index + 1];
-        if (_underscore2.default.isUndefined(nextToken)) return true;
-
-        var currentTokens = tokens.slice(colonIndex, index + 1);
-        if (!_this4.hasBalancedGrouping(currentTokens)) return false;
-        if (nextToken.line === currentToken.line) return false;
-        if (nextToken.indent > colonToken.indent) return false;
-
-        return true;
-      });
-
-      if (tokens[colonIndex - 1].name !== 'closeParen') {
-        return [colonIndex - 1, stopIndex]; // it's a prop definition
-      }
-
-      var tokensBeforeColon = _underscore2.default.first(tokens, colonIndex);
-      var argOpenIndex = _underscore2.default.findLastIndex(tokensBeforeColon, function (token, index) {
-        if (token.name !== 'openParen') return false;
-        var currentTokens = tokensBeforeColon.slice(index);
-        return _this4.hasBalancedGrouping(currentTokens);
-      });
-
-      var nameToken = tokens[argOpenIndex - 1];
-      var defToken = tokens[argOpenIndex - 2];
-      var isDeclaration = !!defToken && !!nameToken && defToken.name === 'def' && nameToken.name === 'identifier';
-      if (!isDeclaration) {
-        return [argOpenIndex, stopIndex]; // it's anonymous
-      }
-
-      return [argOpenIndex - 2, stopIndex];
-    }
-  }, {
-    key: "boundsOfAllFunctionDefinitionsInTokens",
-    value: function boundsOfAllFunctionDefinitionsInTokens(tokens) {
-      var boundsFinderFn = _underscore2.default.bind(this.boundsOfFirstFunctionDefinitionInTokens, this);
-      return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
-    }
-  }, {
-    key: "indexOfFirstProto",
-    value: function indexOfFirstProto(tokens) {
-      var groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
-      var fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
-      var groupsArePresent = !_underscore2.default.isEmpty(groupBoundsPairs);
-      var fnDefsArePresent = !_underscore2.default.isEmpty(fnDefBoundsPairs);
-
-      return _underscore2.default.findIndex(tokens, function (token, index) {
-        if (token.name !== 'proto') return false;
-
-        var isInsideGroup = groupsArePresent && _underscore2.default.any(groupBoundsPairs, function (bounds) {
-          return index > bounds[0] && index < bounds[1];
-        });
-        if (isInsideGroup) return false;
-
-        var isInsideFnDef = fnDefsArePresent && _underscore2.default.any(fnDefBoundsPairs, function (bounds) {
-          return index > bounds[0] && index < bounds[1];
-        });
-        if (isInsideFnDef) return false;
-
-        return true;
-      });
-    }
-  }, {
-    key: "boundsOfFirstProtoDefinitionInTokens",
-    value: function boundsOfFirstProtoDefinitionInTokens(tokens) {
-      var startIndex = this.indexOfFirstProto(tokens);
-      if (startIndex === -1) return [];
-
-      var protoTokens = tokens.slice(startIndex);
-      var validLeftTypes = ['word'];
-      var validRightTypes = [];
-      var indexOfFrom = this.indexOfBinaryOperation('protoDerivation', protoTokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-      var indexOfShaped = this.indexOfBinaryOperation('shapeDefinition', protoTokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-      var indexOfExtends = this.indexOfBinaryOperation('extensionDefinition', protoTokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-
-      var lastDescriptorIndex = _underscore2.default.max([indexOfFrom, indexOfShaped, indexOfExtends]);
-      var descriptorToken = protoTokens[lastDescriptorIndex];
-      if (lastDescriptorIndex === -1) return [startIndex, startIndex + 1];
-      if (lastDescriptorIndex === indexOfFrom) return [startIndex, startIndex + indexOfFrom + 1];
-
-      var restOfTokens = protoTokens.slice(lastDescriptorIndex);
-      var boundsOfBlock = this.boundsOfFirstGroupInTokens(restOfTokens);
-      if (_underscore2.default.isEmpty(boundsOfBlock)) {
-        throw errorAt(descriptorToken, "Expected block for " + descriptorToken.name + " descriptor");
-      }
-
-      var canonicalBounds = _underscore2.default.map(boundsOfBlock, function (boundary) {
-        return boundary + startIndex + lastDescriptorIndex;
-      });
-      var endIndex = canonicalBounds[1];
-      return [startIndex, endIndex];
-    }
-  }, {
-    key: "boundsOfAllProtoDefinitionsInTokens",
-    value: function boundsOfAllProtoDefinitionsInTokens(tokens) {
-      var boundsFinderFn = _underscore2.default.bind(this.boundsOfFirstProtoDefinitionInTokens, this);
-      return this.findAllBoundsInTokensWith(boundsFinderFn, tokens);
-    }
-  }, {
-    key: "indexOfBinaryOperation",
-    value: function indexOfBinaryOperation(operationName, tokens, _ref) {
-      var _this5 = this;
-
-      var validLeftTypes = _ref.validLeftTypes,
-          validRightTypes = _ref.validRightTypes;
-
-      var operatorNames = {
-        assignment: ['equals'],
-        sequence: ['comma'],
-        logicalOR: ['or'],
-        logicalAND: ['and'],
-        equalityComparison: ['equalTo', 'notEqualTo'],
-        differentialComparison: ['greaterThan', 'greaterThanOrEqualTo', 'lessThan', 'lessThanOrEqualTo'],
-        subtraction: ['minus'],
-        addition: ['plus'],
-        division: ['slash'],
-        multiplication: ['star'],
-        exponentiation: ['starStar'],
-        hashPair: ['colon'],
-        dispatch: ['dot'],
-        protoDerivation: ['from'],
-        shapeDefinition: ['shaped'],
-        extensionDefinition: ['extends']
-      }[operationName];
-
-      if (_underscore2.default.isEmpty(operatorNames)) throw "Invalid binary operation '" + operationName + "'";
-
-      var groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
-      var fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
-      var groupsArePresent = !_underscore2.default.isEmpty(groupBoundsPairs);
-      var fnDefsArePresent = !_underscore2.default.isEmpty(fnDefBoundsPairs);
-
-      return _underscore2.default.findIndex(tokens, function (token, index) {
-        if (!_underscore2.default.contains(operatorNames, token.name)) return false;
-
-        var isInsideGroup = groupsArePresent && _underscore2.default.any(groupBoundsPairs, function (bounds) {
-          return index > bounds[0] && index < bounds[1];
-        });
-        if (isInsideGroup) return false;
-
-        var isInsideFunctionDefinition = fnDefsArePresent && _underscore2.default.any(fnDefBoundsPairs, function (bounds) {
-          return index > bounds[0] && index < bounds[1];
-        });
-        if (isInsideFunctionDefinition) return false;
-
-        var leftToken = tokens[index - 1];
-        if (_underscore2.default.isUndefined(leftToken)) return false;
-
-        var rightToken = tokens[index + 1];
-        if (_underscore2.default.isUndefined(rightToken)) return false;
-
-        var leftIsValid = _underscore2.default.contains(validLeftTypes, leftToken.type) || leftToken.name === 'identifier' || _this5.isCloseGroupToken(leftToken);
-        if (!leftIsValid) return false;
-
-        var rightIsValid = _underscore2.default.contains(validRightTypes, rightToken.type) || rightToken.name === 'identifier' || _this5.isOpenGroupToken(rightToken);
-        return leftIsValid && rightIsValid;
-      });
-    }
-  }, {
-    key: "indexOfComparisonOperation",
-    value: function indexOfComparisonOperation(operationName, tokens) {
-      var validLeftTypes = ['word', 'string', 'number', 'regex'];
-      var validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
-      return this.indexOfBinaryOperation(operationName, tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-    }
-  }, {
-    key: "indexOfAssignment",
-    value: function indexOfAssignment(tokens) {
-      var validLeftTypes = ['word'];
-      var validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
-      return this.indexOfBinaryOperation('assignment', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-    }
-  }, {
-    key: "indexOfSequence",
-    value: function indexOfSequence(tokens) {
-      var validLeftTypes = ['word', 'string', 'number', 'regex'];
-      var validRightTypes = ['word', 'string', 'number', 'regex', 'operator'];
-      return this.indexOfBinaryOperation('sequence', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-    }
-  }, {
-    key: "indexOfLogicalOR",
-    value: function indexOfLogicalOR(tokens) {
-      return this.indexOfComparisonOperation('logicalOR', tokens);
-    }
-  }, {
-    key: "indexOfLogicalAND",
-    value: function indexOfLogicalAND(tokens) {
-      return this.indexOfComparisonOperation('logicalAND', tokens);
-    }
-  }, {
-    key: "indexOfEqualityComparison",
-    value: function indexOfEqualityComparison(tokens) {
-      return this.indexOfComparisonOperation('equalityComparison', tokens);
-    }
-  }, {
-    key: "indexOfDifferentialComparison",
-    value: function indexOfDifferentialComparison(tokens) {
-      return this.indexOfComparisonOperation('differentialComparison', tokens);
-    }
-  }, {
-    key: "indexOfSubtraction",
-    value: function indexOfSubtraction(tokens) {
-      var validLeftTypes = ['word', 'number', 'string'];
-      var validRightTypes = ['word', 'number', 'string', 'regex', 'operator'];
-      return this.indexOfBinaryOperation('subtraction', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-    }
-  }, {
-    key: "indexOfAddition",
-    value: function indexOfAddition(tokens) {
-      var validLeftTypes = ['word', 'number', 'string'];
-      var validRightTypes = ['word', 'number', 'string', 'operator'];
-      return this.indexOfBinaryOperation('addition', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-    }
-  }, {
-    key: "indexOfDivision",
-    value: function indexOfDivision(tokens) {
-      var validLeftTypes = ['word', 'number'];
-      var validRightTypes = ['word', 'number', 'regex', 'operator'];
-      return this.indexOfBinaryOperation('division', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-    }
-  }, {
-    key: "indexOfMultiplication",
-    value: function indexOfMultiplication(tokens) {
-      var validLeftTypes = ['word', 'number', 'string'];
-      var validRightTypes = ['word', 'number', 'operator'];
-      return this.indexOfBinaryOperation('multiplication', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-    }
-  }, {
-    key: "indexOfExponentiation",
-    value: function indexOfExponentiation(tokens) {
-      var validLeftTypes = ['word', 'number'];
-      var validRightTypes = ['word', 'number', 'operator'];
-      return this.indexOfBinaryOperation('exponentiation', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-    }
-  }, {
-    key: "indexOfHashColon",
-    value: function indexOfHashColon(tokens) {
-      var validLeftTypes = ['word', 'number', 'string', 'regex'];
-      var validRightTypes = ['word', 'number', 'string', 'regex', 'operator'];
-      var indexOfFirstColon = this.indexOfBinaryOperation('hashPair', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-      if (indexOfFirstColon === -1) return -1;
-
-      var tokenBeforeColon = tokens[indexOfFirstColon - 1];
-      if (_underscore2.default.isUndefined(tokenBeforeColon)) return -1;
-
-      var tokenAfterColon = tokens[indexOfFirstColon + 1];
-      if (_underscore2.default.isUndefined(tokenAfterColon)) return -1;
-
-      var firstColonToken = tokens[indexOfFirstColon];
-      var linesBeforeColon = this.linesBetween(tokenBeforeColon, firstColonToken);
-      if (linesBeforeColon > 0) return -1;
-
-      var linesAfterColon = this.linesBetween(firstColonToken, tokenAfterColon);
-      var spacesAfterColon = this.columnsBetween(firstColonToken, tokenAfterColon);
-      if (linesAfterColon === 0 && spacesAfterColon === 0) return -1;
-
-      return indexOfFirstColon;
-    }
-  }, {
-    key: "indexOfDispatch",
-    value: function indexOfDispatch(tokens) {
-      var validLeftTypes = ['word', 'number', 'string', 'regex'];
-      var validRightTypes = ['word'];
-      return this.indexOfBinaryOperation('dispatch', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-    }
-  }, {
-    key: "indexOfFunctionCall",
-    value: function indexOfFunctionCall(tokens) {
-      var offset = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
-
-      var boundsOfFirstGroup = this.boundsOfFirstGroupInTokens(tokens);
-      if (_underscore2.default.isEmpty(boundsOfFirstGroup)) return -1;
-
-      var indexOfOpenToken = boundsOfFirstGroup[0];
-      var openToken = tokens[indexOfOpenToken];
-      var leftToken = tokens[indexOfOpenToken - 1];
-      if (openToken.name === 'openParen' && leftToken) {
-        var validTypes = ['word', 'string', 'number'];
-        var validNames = ['closeParen', 'closeBracket', 'closeBrace'];
-        if (_underscore2.default.contains(validTypes, leftToken.type) || _underscore2.default.contains(validNames, leftToken.name)) {
-          return indexOfOpenToken + offset;
-        }
-      }
-
-      var indexOfCloseToken = boundsOfFirstGroup[1];
-      var restOfTokens = tokens.slice(indexOfCloseToken);
-      var currentOffset = indexOfCloseToken + offset;
-      return this.indexOfFunctionCall(restOfTokens, currentOffset);
-    }
-
-    // Given a set of tokens, returns the tokens up to the end of the first line (or spanning
-    // multiple lines if there are grouping symbols), to the end of the contiguous "statement".
-    // Does not include the block of a function/proto definition, etc., as blocks are multiple
-    // statements, so I'm just gonna treat the definition statement as a single entity for now
-    // and validate/construct the definition block somewhere else.
-    // EDIT: ...SLASH TODO: CONSIDER SURROUNDING FUNCTION DEFS W/ CURLY BRACES MAYBE
-
-  }, {
-    key: "firstStatementFromTokens",
-    value: function firstStatementFromTokens(tokens) {
-      var _this6 = this;
-
-      if (_underscore2.default.isEmpty(tokens)) return [];
-
-      var groupBoundsPairs = this.boundsOfAllGroupsInTokens(tokens);
-      var fnDefBoundsPairs = this.boundsOfAllFunctionDefinitionsInTokens(tokens);
-      var groupsArePresent = !_underscore2.default.isEmpty(groupBoundsPairs);
-      var fnDefsArePresent = !_underscore2.default.isEmpty(fnDefBoundsPairs);
-
-      var statementEndPos = _underscore2.default.findIndex(tokens, function (currentToken, index) {
-        var nextToken = tokens[index + 1];
-        if (_underscore2.default.isUndefined(nextToken)) return true;
-
-        var isInsideGroup = groupsArePresent && _underscore2.default.any(groupBoundsPairs, function (bounds) {
-          return index > bounds[0] && index < bounds[1];
-        });
-        if (isInsideGroup) return false;
-
-        var isInsideFunctionDefinition = fnDefsArePresent && _underscore2.default.any(fnDefBoundsPairs, function (bounds) {
-          return index > bounds[0] && index < bounds[1];
-        });
-        if (isInsideFunctionDefinition) return false;
-
-        if (nextToken.line === currentToken.line) return false;
-
-        var currentTokens = _underscore2.default.first(tokens, index + 1);
-        return _this6.hasBalancedGrouping(currentTokens);
-      });
-
-      return _underscore2.default.first(tokens, statementEndPos + 1);
-    }
-  }, {
-    key: "identityNode",
-    value: function identityNode(token) {
-      var validIdentityTypes = ['word', 'string', 'number', 'regex'];
-      if (!_underscore2.default.contains(validIdentityTypes, token.type)) {
-        throw errorAt(token, 'Expected to find valid identity token');
-      }
-
-      return {
-        operation: 'identity',
-        token: token
-      };
-    }
-  }, {
-    key: "unaryOperationNode",
-    value: function unaryOperationNode(operationName, tokens) {
-      var operatorToken = _underscore2.default.first(tokens);
-      var rightTokens = _underscore2.default.rest(tokens);
-
-      var validUnaryOperatorNames = ['plus', 'minus', 'not'];
-      if (!_underscore2.default.contains(validUnaryOperatorNames, operatorToken.name)) {
-        throw errorAt(operatorToken, "Expected to find " + operationName);
-      }
-
-      return {
-        operation: operationName,
-        token: operatorToken,
-        rightNode: this.pemdasNodeFromStatement(rightTokens)
-      };
-    }
-  }, {
-    key: "binaryOperationNode",
-    value: function binaryOperationNode(operationName, operatorIndex, tokens) {
-      var tokenNames = {
-        subtraction: ['minus'],
-        addition: ['plus'],
-        division: ['slash'],
-        multiplication: ['star'],
-        exponentiation: ['starStar'],
-        assignment: ['equals'],
-        dispatch: ['dot'],
-        comparison: ['equalTo', 'greaterThan', 'greaterThanOrEqualTo', 'lessThan', 'lessThanOrEqualTo', 'notEqualTo'],
-        boolean: ['and', 'or']
-      }[operationName];
-
-      var operatorToken = tokens[operatorIndex];
-      if (!_underscore2.default.contains(tokenNames, operatorToken.name)) {
-        throw errorAt(operatorToken, "Expected to find " + operationName);
-      }
-
-      var leftTokens = _underscore2.default.first(tokens, operatorIndex);
-      if (_underscore2.default.isEmpty(leftTokens)) {
-        throw errorAt(operatorToken, "Found no left-hand side for " + operationName);
-      }
-
-      var rightTokens = tokens.slice(operatorIndex + 1);
-      if (_underscore2.default.isEmpty(rightTokens)) {
-        throw errorAt(operatorToken, "Found no right-hand side for " + operationName);
-      }
-
-      return {
-        operation: operationName,
-        token: operatorToken,
-        leftNode: this.pemdasNodeFromStatement(leftTokens),
-        rightNode: this.pemdasNodeFromStatement(rightTokens)
-      };
-    }
-  }, {
-    key: "sequenceNode",
-    value: function sequenceNode(firstCommaIndex, tokens) {
-      var _this7 = this;
-
-      var firstComma = tokens[firstCommaIndex];
-      if (firstComma.name !== 'comma') {
-        throw errorAt(firstComma, 'Expected to find comma');
-      }
-
-      var sequenceSets = _underscore2.default.reduce(tokens, function (sets, token) {
-        if (token.name === 'comma') {
-          sets.push([]);
-        } else {
-          _underscore2.default.last(sets).push(token);
-        }
-
-        return sets;
-      }, [[]]);
-
-      var sequenceNodes = _underscore2.default.map(sequenceSets, function (set) {
-        return _this7.pemdasNodeFromStatement(set);
-      });
-
-      return {
-        operation: 'sequence',
-        startToken: _underscore2.default.first(tokens),
-        endToken: _underscore2.default.last(tokens),
-        sequenceNodes: sequenceNodes
-      };
-    }
-  }, {
-    key: "groupNode",
-    value: function groupNode(operationName, tokens) {
-      var correctOpenTokenName = {
-        parenGroup: 'openParen',
-        bracketGroup: 'openBracket',
-        braceGroup: 'openBrace'
-      }[operationName];
-
-      var openToken = _underscore2.default.first(tokens);
-      if (openToken.name !== correctOpenTokenName) {
-        throw errorAt(openToken, "Expected " + operationName + " opening symbol");
-      }
-
-      var closeToken = _underscore2.default.last(tokens);
-      if (!this.openTokenMatchesCloser(openToken, closeToken)) {
-        throw errorAt(closeToken, "Expected " + operationName + " closing symbol");
-      }
-
-      var innerTokens = tokens.slice(1, -1);
-
-      return {
-        operation: operationName,
-        openToken: openToken,
-        closeToken: closeToken,
-        innerNode: this.pemdasNodeFromStatement(innerTokens)
-      };
-    }
-  }, {
-    key: "startsWithPropDefinition",
-    value: function startsWithPropDefinition(tokens) {
-      var _tokens = _slicedToArray(tokens, 3),
-          nameToken = _tokens[0],
-          colonToken = _tokens[1],
-          typeToken = _tokens[2];
-
-      if (_underscore2.default.isUndefined(nameToken) || nameToken.name !== 'identifier') return false;
-      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') return false;
-      if (_underscore2.default.isUndefined(typeToken) || typeToken.type !== 'word') return false;
-      if (nameToken.line !== colonToken.line) return false;
-      if (colonToken.line !== typeToken.line) return false;
-
-      var spacesBeforeColon = this.columnsBetween(nameToken, colonToken);
-      var spacesAfterColon = this.columnsBetween(colonToken, typeToken);
-      if (spacesBeforeColon > 0 || spacesAfterColon > 0) return false;
-
-      return true;
-    }
-  }, {
-    key: "startsWithPropDefault",
-    value: function startsWithPropDefault(tokens) {
-      if (!this.startsWithPropDefinition(tokens)) return false;
-      var defaultToken = tokens[3];
-      if (defaultToken && defaultToken.name === 'set') return false;
-      return true;
-    }
-  }, {
-    key: "startsWithPropSetter",
-    value: function startsWithPropSetter(tokens) {
-      if (!this.startsWithPropDefinition(tokens)) return false;
-      var setToken = tokens[3];
-      if (_underscore2.default.isUndefined(setToken) || setToken.name !== 'set') return false;
-      return true;
-    }
-  }, {
-    key: "startsWithFnDeclaration",
-    value: function startsWithFnDeclaration(tokens) {
-      var _tokens2 = _slicedToArray(tokens, 2),
-          defToken = _tokens2[0],
-          nameToken = _tokens2[1];
-
-      if (_underscore2.default.isUndefined(defToken) || defToken.name !== 'def') return false;
-      if (_underscore2.default.isUndefined(nameToken) || nameToken.name !== 'identifier') return false;
-
-      var argBounds = this.boundsOfFirstGroupInTokens(tokens);
-      if (argBounds[0] !== 2) return false;
-
-      var colonToken = tokens[argBounds[1] + 1];
-      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') return false;
-
-      return true;
-    }
-  }, {
-    key: "startsWithAnonFn",
-    value: function startsWithAnonFn(tokens) {
-      var argBounds = this.boundsOfFirstGroupInTokens(tokens);
-      if (argBounds[0] !== 0) return false;
-
-      var colonToken = tokens[argBounds[1] + 1];
-      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') return false;
-
-      return true;
-    }
-  }, {
-    key: "linesBetween",
+    key: 'linesBetween',
     value: function linesBetween() {
       var firstToken = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
       var secondToken = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
@@ -2669,7 +5164,7 @@ var Syntaxer = function () {
       return Math.abs(firstToken.line - secondToken.line);
     }
   }, {
-    key: "columnsBetween",
+    key: 'columnsBetween',
     value: function columnsBetween() {
       var firstToken = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { lexeme: '' };
       var secondToken = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : { lexeme: '' };
@@ -2683,404 +5178,11 @@ var Syntaxer = function () {
       var endCol = endToken.column;
       return endCol - startCol;
     }
-  }, {
-    key: "anonFnDefinitionNode",
-    value: function anonFnDefinitionNode(tokens) {
-      var argBounds = this.boundsOfFirstGroupInTokens(tokens);
-      if (argBounds[0] !== 0) {
-        throw errorAt(tokens[0], 'Expected arguments to begin the anonymous function');
-      }
-
-      var colonIndex = argBounds[1] + 1;
-      var colonToken = tokens[colonIndex];
-      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') {
-        throw errorAt(colonToken, 'Expected valid function definition');
-      }
-
-      var tokenAfterColon = tokens[colonIndex + 1];
-      var linesAfterColon = this.linesBetween(colonToken, tokenAfterColon);
-      var colsAfterColon = this.columnsBetween(colonToken, tokenAfterColon);
-      var typeToken = linesAfterColon === 0 && colsAfterColon === 0 ? tokenAfterColon : undefined;
-      var argTokens = tokens.slice(argBounds[0] + 1, argBounds[1]);
-      var blockStartIndex = colonIndex + (_underscore2.default.isUndefined(typeToken) ? 1 : 2);
-      var blockTokens = tokens.slice(blockStartIndex);
-
-      return {
-        operation: 'anonFnDefinition',
-        colonToken: colonToken,
-        typeToken: typeToken,
-        argumentsNode: this.pemdasNodeFromStatement(argTokens),
-        blockNodes: this.traverse(blockTokens)
-      };
-    }
-  }, {
-    key: "fnDeclarationNode",
-    value: function fnDeclarationNode(tokens) {
-      var defToken = tokens[0];
-      if (_underscore2.default.isUndefined(defToken) || defToken.name !== 'def') {
-        throw errorAt(defToken, 'Expected "def" to start the function declaration');
-      }
-
-      var nameToken = tokens[1];
-      if (_underscore2.default.isUndefined(nameToken) || nameToken.name !== 'identifier') {
-        throw errorAt(nameToken, 'Expected the function declaration to have a valid name');
-      }
-
-      var argBounds = this.boundsOfFirstGroupInTokens(tokens);
-      if (argBounds[0] !== 2) {
-        throw errorAt(nameToken, 'Expected arguments for function declaration after name');
-      }
-
-      var colonIndex = argBounds[1] + 1;
-      var colonToken = tokens[colonIndex];
-      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') {
-        throw errorAt(colonToken, 'Expected valid function declaration');
-      }
-
-      var tokenAfterColon = tokens[colonIndex + 1];
-      var linesAfterColon = this.linesBetween(colonToken, tokenAfterColon);
-      var colsAfterColon = this.columnsBetween(colonToken, tokenAfterColon);
-      var typeToken = linesAfterColon === 0 && colsAfterColon === 0 ? tokenAfterColon : undefined;
-      var argTokens = tokens.slice(argBounds[0] + 1, argBounds[1]);
-      var blockStartIndex = colonIndex + (_underscore2.default.isUndefined(typeToken) ? 1 : 2);
-      var blockTokens = tokens.slice(blockStartIndex);
-
-      return {
-        operation: 'fnDeclaration',
-        nameToken: nameToken,
-        colonToken: colonToken,
-        typeToken: typeToken,
-        argumentsNode: this.pemdasNodeFromStatement(argTokens),
-        blockNodes: this.traverse(blockTokens)
-      };
-    }
-  }, {
-    key: "propDefaultNode",
-    value: function propDefaultNode(tokens) {
-      var nameToken = tokens[0];
-      if (_underscore2.default.isUndefined(nameToken) || nameToken.name !== 'identifier') {
-        throw errorAt(nameToken, 'Expected the prop default to have a valid name');
-      }
-
-      var colonToken = tokens[1];
-      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') {
-        throw errorAt(colonToken, 'Expected valid prop default definition');
-      }
-
-      var typeToken = tokens[2];
-      var linesAfterColon = this.linesBetween(colonToken, typeToken);
-      var colsAfterColon = this.columnsBetween(colonToken, typeToken);
-      var typePosIsValid = linesAfterColon === 0 && colsAfterColon === 0;
-      if (_underscore2.default.isUndefined(typeToken) || !typePosIsValid || typeToken.type !== 'word') {
-        throw errorAt(colonToken, 'Prop must specify a type');
-      }
-
-      var blockTokens = tokens.slice(3);
-
-      return {
-        operation: 'propDefault',
-        nameToken: nameToken,
-        colonToken: colonToken,
-        typeToken: typeToken,
-        blockNodes: this.traverse(blockTokens)
-      };
-    }
-  }, {
-    key: "propSetterNode",
-    value: function propSetterNode(tokens) {
-      var nameToken = tokens[0];
-      if (_underscore2.default.isUndefined(nameToken) || nameToken.name !== 'identifier') {
-        throw errorAt(nameToken, 'Expected the prop default to have a valid name');
-      }
-
-      var colonToken = tokens[1];
-      if (_underscore2.default.isUndefined(colonToken) || colonToken.name !== 'colon') {
-        throw errorAt(colonToken, 'Expected valid prop default definition');
-      }
-
-      var typeToken = tokens[2];
-      var linesAfterColon = this.linesBetween(colonToken, typeToken);
-      var colsAfterColon = this.columnsBetween(colonToken, typeToken);
-      var typePosIsValid = linesAfterColon === 0 && colsAfterColon === 0;
-      if (_underscore2.default.isUndefined(typeToken) || !typePosIsValid || typeToken.type !== 'word') {
-        throw errorAt(colonToken, 'Prop must specify a type');
-      }
-
-      var setToken = tokens[3];
-      var linesAfterType = this.linesBetween(typeToken, setToken);
-      if (_underscore2.default.isUndefined(setToken) || linesAfterType !== 0) {
-        throw errorAt(typeToken, 'Expected prop setter "set" keyword after specifying type');
-      }
-
-      var blockTokens = tokens.slice(4);
-
-      return {
-        operation: 'propSetter',
-        nameToken: nameToken,
-        colonToken: colonToken,
-        typeToken: typeToken,
-        blockNodes: this.traverse(blockTokens)
-      };
-    }
-  }, {
-    key: "functionCallNode",
-    value: function functionCallNode(indexOfOpenToken, tokens) {
-      var openToken = tokens[indexOfOpenToken];
-      var leftToken = tokens[indexOfOpenToken - 1];
-
-      if (!openToken || !leftToken || openToken.name !== 'openParen') {
-        throw errorAt(openToken, 'Expected function call');
-      }
-
-      var validLeftTypes = ['word', 'string', 'number'];
-      var validLeftNames = ['closeParen', 'closeBracket', 'closeBrace'];
-      if (!(_underscore2.default.contains(validLeftTypes, leftToken.type) || _underscore2.default.contains(validLeftNames, leftToken.name))) {
-        throw errorAt(leftToken, 'Invalid function callee');
-      }
-
-      var calleeTokens = _underscore2.default.first(tokens, indexOfOpenToken);
-      var restOfTokens = tokens.slice(indexOfOpenToken);
-      var boundsOfArgs = this.boundsOfFirstGroupInTokens(restOfTokens);
-
-      if (_underscore2.default.isEmpty(boundsOfArgs)) {
-        throw errorAt(openToken, 'Incomplete argument group for function call');
-      }
-
-      var closeToken = restOfTokens[boundsOfArgs[1]];
-      var argumentsTokens = restOfTokens.slice(boundsOfArgs[0] + 1, boundsOfArgs[1]);
-
-      return {
-        operation: 'functionCall',
-        openToken: openToken,
-        closeToken: closeToken,
-        calleeNode: this.pemdasNodeFromStatement(calleeTokens),
-        argumentsNode: this.pemdasNodeFromStatement(argumentsTokens)
-      };
-    }
-  }, {
-    key: "hashPairNode",
-    value: function hashPairNode(indexOfHashColon, tokens) {
-      var colonToken = tokens[indexOfHashColon];
-      if (colonToken.name !== 'colon') {
-        throw errorAt(colonToken, 'Expected to find a hash pair colon');
-      }
-
-      var leftTokens = _underscore2.default.first(tokens, indexOfHashColon);
-      if (_underscore2.default.isEmpty(leftTokens)) {
-        throw errorAt(colonToken, 'Found no left-hand side (key) for the hash pair');
-      }
-
-      var rightTokens = tokens.slice(indexOfHashColon + 1);
-      if (_underscore2.default.isEmpty(rightTokens)) {
-        throw errorAt(colonToken, 'Found no right-hand side (value) for the hash pair');
-      }
-
-      return {
-        operation: 'hashPair',
-        token: colonToken,
-        keyNode: this.pemdasNodeFromStatement(leftTokens),
-        valueNode: this.pemdasNodeFromStatement(rightTokens)
-      };
-    }
-  }, {
-    key: "protoDefinitionNode",
-    value: function protoDefinitionNode(tokens) {
-      var protoToken = tokens[0];
-      if (protoToken.name !== 'proto') {
-        throw errorAt(protoToken, 'Expected proto definition');
-      }
-
-      var validLeftTypes = ['word'];
-      var validRightTypes = [];
-      var indexOfFrom = this.indexOfBinaryOperation('protoDerivation', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-      var indexOfShaped = this.indexOfBinaryOperation('shapeDefinition', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-      var indexOfExtends = this.indexOfBinaryOperation('extensionDefinition', tokens, { validLeftTypes: validLeftTypes, validRightTypes: validRightTypes });
-
-      var derivationToken = tokens[indexOfFrom] && tokens[indexOfFrom + 1];
-      var shapeBlockBounds = indexOfShaped === -1 ? [] : this.boundsOfFirstGroupInTokens(tokens.slice(indexOfShaped));
-      var extendBlockBounds = indexOfExtends === -1 ? [] : this.boundsOfFirstGroupInTokens(tokens.slice(indexOfExtends));
-      var canonicalShapeBounds = _underscore2.default.map(shapeBlockBounds, function (boundary) {
-        return boundary + indexOfShaped;
-      });
-      var canonicalExtendBounds = _underscore2.default.map(extendBlockBounds, function (boundary) {
-        return boundary + indexOfExtends;
-      });
-
-      // hacky bullshit that needs to be rewritten ASAP
-      var shapeTokens = tokens.slice((canonicalShapeBounds[0] || -1) + 1, canonicalShapeBounds[1] || 0);
-      var extensionTokens = tokens.slice((canonicalExtendBounds[0] || -1) + 1, canonicalExtendBounds[1] || 0);
-
-      return {
-        operation: 'protoDefinition',
-        protoToken: protoToken,
-        derivationToken: derivationToken,
-        shapeBlockNodes: this.traverse(shapeTokens),
-        extendBlockNodes: this.traverse(extensionTokens)
-      };
-    }
-  }, {
-    key: "regexNode",
-    value: function regexNode(tokens) {
-      var openSlash = tokens[0];
-      if (openSlash.name !== 'slash') throw errorAt(openSlash, 'Expected regex to begin');
-    }
-  }, {
-    key: "pemdasNodeFromStatement",
-    value: function pemdasNodeFromStatement(statementTokens) {
-      if (_underscore2.default.isEmpty(statementTokens)) {
-        return null;
-      }
-
-      if (statementTokens.length === 1) {
-        return this.identityNode(statementTokens[0]);
-      }
-
-      var indexOfSequence = this.indexOfSequence(statementTokens);
-      if (indexOfSequence !== -1) {
-        return this.sequenceNode(indexOfSequence, statementTokens);
-      }
-
-      var indexOfAssignment = this.indexOfAssignment(statementTokens);
-      if (indexOfAssignment !== -1) {
-        return this.binaryOperationNode('assignment', indexOfAssignment, statementTokens);
-      }
-
-      var indexOfLogicalOR = this.indexOfLogicalOR(statementTokens);
-      if (indexOfLogicalOR !== -1) {
-        return this.binaryOperationNode('boolean', indexOfLogicalOR, statementTokens);
-      }
-
-      var indexOfLogicalAND = this.indexOfLogicalAND(statementTokens);
-      if (indexOfLogicalAND !== -1) {
-        return this.binaryOperationNode('boolean', indexOfLogicalAND, statementTokens);
-      }
-
-      var indexOfEqualityComparison = this.indexOfEqualityComparison(statementTokens);
-      if (indexOfEqualityComparison !== -1) {
-        return this.binaryOperationNode('comparison', indexOfEqualityComparison, statementTokens);
-      }
-
-      var indexOfDifferentialComparison = this.indexOfDifferentialComparison(statementTokens);
-      if (indexOfDifferentialComparison !== -1) {
-        return this.binaryOperationNode('comparison', indexOfDifferentialComparison, statementTokens);
-      }
-
-      var indexOfAddition = this.indexOfAddition(statementTokens);
-      var indexOfSubtraction = this.indexOfSubtraction(statementTokens);
-      var firstLinearMathIndex = _underscore2.default.min(_underscore2.default.without([indexOfAddition, indexOfSubtraction], -1));
-      switch (firstLinearMathIndex) {
-        case indexOfAddition:
-          return this.binaryOperationNode('addition', indexOfAddition, statementTokens);
-        case indexOfSubtraction:
-          return this.binaryOperationNode('subtraction', indexOfSubtraction, statementTokens);
-        default:
-          break; // to satisfy eslint
-      }
-
-      var indexOfDivision = this.indexOfDivision(statementTokens);
-      var indexOfMultiplication = this.indexOfMultiplication(statementTokens);
-      var firstPlanarMathIndex = _underscore2.default.min(_underscore2.default.without([indexOfDivision, indexOfMultiplication], -1));
-      switch (firstPlanarMathIndex) {
-        case indexOfDivision:
-          return this.binaryOperationNode('division', indexOfDivision, statementTokens);
-        case indexOfMultiplication:
-          return this.binaryOperationNode('multiplication', indexOfMultiplication, statementTokens);
-        default:
-          break; // to satisfy eslint
-      }
-
-      var indexOfExponentiation = this.indexOfExponentiation(statementTokens);
-      if (indexOfExponentiation !== -1) {
-        return this.binaryOperationNode('exponentiation', indexOfExponentiation, statementTokens);
-      }
-
-      var firstToken = _underscore2.default.first(statementTokens);
-      switch (firstToken.name) {
-        case 'minus':
-          return this.unaryOperationNode('negation', statementTokens);
-        case 'plus':
-          return this.unaryOperationNode('substantiation', statementTokens);
-        case 'not':
-          return this.unaryOperationNode('inversion', statementTokens);
-        case 'proto':
-          return this.protoDefinitionNode(statementTokens);
-        case 'check':
-          return this.checkNode(statementTokens);
-        case 'guard':
-          return this.guardNode(statementTokens);
-        default:
-          break; // to satisfy eslint
-      }
-
-      var indexOfHashColon = this.indexOfHashColon(statementTokens);
-      if (indexOfHashColon !== -1) {
-        return this.hashPairNode(indexOfHashColon, statementTokens);
-      }
-
-      var isAnonymousFn = this.startsWithAnonFn(statementTokens);
-      var isFnDeclaration = !isAnonymousFn && this.startsWithFnDeclaration(statementTokens);
-      var isPropDefault = !isAnonymousFn && !isFnDeclaration && this.startsWithPropDefault(statementTokens);
-      var isPropSetter = !isAnonymousFn && !isFnDeclaration && !isPropDefault && this.startsWithPropSetter(statementTokens);
-
-      switch (true) {
-        case isAnonymousFn:
-          return this.anonFnDefinitionNode(statementTokens);
-        case isFnDeclaration:
-          return this.fnDeclarationNode(statementTokens);
-        case isPropDefault:
-          return this.propDefaultNode(statementTokens);
-        case isPropSetter:
-          return this.propSetterNode(statementTokens);
-        default:
-          break; // to satisfy eslint
-      }
-
-      var indexOfDispatch = this.indexOfDispatch(statementTokens);
-      var indexOfFunctionCall = this.indexOfFunctionCall(statementTokens);
-      var firstAccessionIndex = _underscore2.default.min(_underscore2.default.without([indexOfDispatch, indexOfFunctionCall], -1));
-      switch (firstAccessionIndex) {
-        case indexOfDispatch:
-          return this.binaryOperationNode('dispatch', indexOfDispatch, statementTokens);
-        case indexOfFunctionCall:
-          return this.functionCallNode(indexOfFunctionCall, statementTokens);
-        default:
-          break; // to satisfy eslint
-      }
-
-      switch (firstToken.name) {
-        case 'openParen':
-          return this.groupNode('parenGroup', statementTokens);
-        case 'openBracket':
-          return this.groupNode('bracketGroup', statementTokens);
-        case 'openBrace':
-          return this.groupNode('braceGroup', statementTokens);
-        case 'slash':
-          return this.regexNode(statementTokens);
-        default:
-          break; // to satisfy eslint
-      }
-
-      var lastToken = _underscore2.default.last(statementTokens);
-      throw errorBetween(firstToken, lastToken, 'Unrecognized statement');
-    }
-  }, {
-    key: "traverse",
-    value: function traverse() {
-      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokenList;
-      var nodes = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
-
-      if (_underscore2.default.isEmpty(tokens)) return nodes;
-      var firstStatement = this.firstStatementFromTokens(tokens);
-      var firstNode = this.pemdasNodeFromStatement(firstStatement);
-      nodes.push(firstNode);
-      var restOfTokens = tokens.slice(firstStatement.length);
-      return this.traverse(restOfTokens, nodes);
-    }
   }]);
 
-  return Syntaxer;
+  return TokenUtil;
 }();
 
-exports.default = Syntaxer;
+exports.default = TokenUtil;
 
-},{"underscore":1}]},{},[2]);
+},{"../utils/grammar":10,"underscore":1}]},{},[5]);
