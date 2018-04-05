@@ -4,13 +4,13 @@ import TokenParser from '../parse/token_parser';
 
 export default class Syntaxer {
   constructor(tokens) {
-    this.tokens       = tokens;
-    this.tokensParser = new TokenParser(this.tokens);
+    this.tokens = tokens;
   }
 
   traverse(tokens = this.tokens, nodes = []) {
     if (_.isEmpty(tokens)) return nodes;
-    const firstStatement = this.tokensParser.firstStatement();
+    const parser         = new TokenParser(tokens);
+    const firstStatement = parser.firstStatement();
     const firstNode      = Node.fromStatement(firstStatement);
     nodes.push(firstNode);
     const restOfTokens   = tokens.slice(firstStatement.length);

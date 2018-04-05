@@ -1625,7 +1625,6 @@ var Syntaxer = function () {
     _classCallCheck(this, Syntaxer);
 
     this.tokens = tokens;
-    this.tokensParser = new _token_parser2.default(this.tokens);
   }
 
   _createClass(Syntaxer, [{
@@ -1635,7 +1634,8 @@ var Syntaxer = function () {
       var nodes = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : [];
 
       if (_underscore2.default.isEmpty(tokens)) return nodes;
-      var firstStatement = this.tokensParser.firstStatement();
+      var parser = new _token_parser2.default(tokens);
+      var firstStatement = parser.firstStatement();
       var firstNode = _node2.default.fromStatement(firstStatement);
       nodes.push(firstNode);
       var restOfTokens = tokens.slice(firstStatement.length);
@@ -3234,12 +3234,12 @@ var Node = function () {
       var derivationToken = tokens[indexOfFrom] && tokens[indexOfFrom + 1];
 
       var shapeBlockBounds = indexOfShaped === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfShaped), 'openBrace');
-      var extendBlockBounds = indexOfExtends === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfExtends), 'openBrace');
+      var extendsBlockBounds = indexOfExtends === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfExtends), 'openBrace');
 
       var canonicalShapeBounds = _underscore2.default.map(shapeBlockBounds, function (boundary) {
         return boundary + indexOfShaped;
       });
-      var canonicalExtendsBounds = _underscore2.default.map(extendBlockBounds, function (boundary) {
+      var canonicalExtendsBounds = _underscore2.default.map(extendsBlockBounds, function (boundary) {
         return boundary + indexOfExtends;
       });
 
@@ -3620,7 +3620,7 @@ var Node = function () {
       var tokens = options.tokens || parser.tokens;
       var hashColonIndex = parser.indexOfHashColon(tokens);
       if (hashColonIndex === -1) return null;
-      return this.hashPairNode(hashColonIndex, tokens);
+      return this.hashPair(hashColonIndex, tokens);
     }
   }, {
     key: 'functionDefinitionIfValid',
@@ -3658,9 +3658,9 @@ var Node = function () {
       var firstAccessionIndex = _underscore2.default.min(_underscore2.default.without([dispatchIndex, functionCallIndex], -1));
       switch (firstAccessionIndex) {
         case dispatchIndex:
-          return this.binaryOperationNode('dispatch', indexOfDispatch, tokens);
+          return this.binaryOperation('dispatch', dispatchIndex, tokens);
         case functionCallIndex:
-          return this.functionCallNode(functionCallIndex, tokens);
+          return this.functionCall(functionCallIndex, tokens);
         default:
           return null;
       }
@@ -4058,7 +4058,7 @@ function lastIndexOfIndentedBlock(tokens) {
   if (firstIndentedToken.indent <= firstToken.indent) return lastIndexBeforeIndent;
 
   var lastIndentedTokenIndex = firstIndentedTokenIndex + _underscore2.default.findIndex(indentedTokensAndRest, function (currentToken, index) {
-    var nextToken = tokens[index + 1];
+    var nextToken = indentedTokensAndRest[index + 1];
     if (_underscore2.default.isUndefined(nextToken)) return true;
 
     var tokensTilNow = _underscore2.default.first(indentedTokensAndRest, index + 1);
@@ -4230,7 +4230,7 @@ function _indexOfFunctionCall(tokens) {
 
   var indexOfOpenToken = boundsOfFirstGroup[0];
   var boundsPairs = boundsOfAllStructuresInTokens(tokens, { except: ['group'] });
-  var isInsideStructure = indexIsInsideBoundsPairs(index, boundsPairs);
+  var isInsideStructure = indexIsInsideBoundsPairs(indexOfOpenToken, boundsPairs);
   if (isInsideStructure) return -1;
 
   var openToken = tokens[indexOfOpenToken];
@@ -4574,21 +4574,24 @@ var TokenParser = function () {
 
       if (_underscore2.default.isEmpty(tokens)) return [];
 
-      var boundsPairs = boundsOfAllStructuresInTokens(tokens);
-      var statementEndPos = _underscore2.default.findIndex(tokens, function (currentToken, index) {
-        var nextToken = tokens[index + 1];
-        if (_underscore2.default.isUndefined(nextToken)) return true;
+      var endIndex = lastIndexOfIndentedBlock(tokens);
+      return _underscore2.default.first(tokens, endIndex + 1);
 
-        var isInsideStructure = indexIsInsideBoundsPairs(index + 1, boundsPairs);
-        if (isInsideStructure) return false;
+      // const boundsPairs     = boundsOfAllStructuresInTokens(tokens);
+      // const statementEndPos = _.findIndex(tokens, (currentToken, index) => {
+      //   const nextToken = tokens[index + 1];
+      //   if (_.isUndefined(nextToken))             return true;
 
-        if (nextToken.line === currentToken.line) return false;
+      //   const isInsideStructure = indexIsInsideBoundsPairs(index + 1, boundsPairs);
+      //   if (isInsideStructure)                    return false;
 
-        var currentTokens = _underscore2.default.first(tokens, index + 1);
-        return tokensHaveBalancedGrouping(currentTokens);
-      });
+      //   if (nextToken.line === currentToken.line) return false;
 
-      return _underscore2.default.first(tokens, statementEndPos + 1);
+      //   const currentTokens = _.first(tokens, index + 1);
+      //   return tokensHaveBalancedGrouping(currentTokens);
+      // });
+
+      // return _.first(tokens, statementEndPos + 1);
     }
   }, {
     key: 'startsWithPropDefinition',

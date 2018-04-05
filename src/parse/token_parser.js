@@ -113,7 +113,7 @@ function lastIndexOfIndentedBlock(tokens) {
   if (firstIndentedToken.indent <= firstToken.indent) return lastIndexBeforeIndent;
 
   const lastIndentedTokenIndex = firstIndentedTokenIndex + _.findIndex(indentedTokensAndRest, (currentToken, index) => {
-    const nextToken = tokens[index + 1];
+    const nextToken = indentedTokensAndRest[index + 1];
     if (_.isUndefined(nextToken)) return true;
 
     const tokensTilNow = _.first(indentedTokensAndRest, index + 1);
@@ -289,7 +289,7 @@ function indexOfFunctionCall(tokens, offset = 0) {
 
   const indexOfOpenToken  = boundsOfFirstGroup[0];
   const boundsPairs       = boundsOfAllStructuresInTokens(tokens, { except: ['group'] });
-  const isInsideStructure = indexIsInsideBoundsPairs(index, boundsPairs);
+  const isInsideStructure = indexIsInsideBoundsPairs(indexOfOpenToken, boundsPairs);
   if (isInsideStructure)             return -1;
 
   const openToken = tokens[indexOfOpenToken];
@@ -615,21 +615,24 @@ class TokenParser {
   firstStatement(tokens = this.tokens) {
     if (_.isEmpty(tokens)) return [];
 
-    const boundsPairs     = boundsOfAllStructuresInTokens(tokens);
-    const statementEndPos = _.findIndex(tokens, (currentToken, index) => {
-      const nextToken = tokens[index + 1];
-      if (_.isUndefined(nextToken))             return true;
+    const endIndex = lastIndexOfIndentedBlock(tokens);
+    return _.first(tokens, endIndex + 1);
 
-      const isInsideStructure = indexIsInsideBoundsPairs(index + 1, boundsPairs);
-      if (isInsideStructure)                    return false;
+    // const boundsPairs     = boundsOfAllStructuresInTokens(tokens);
+    // const statementEndPos = _.findIndex(tokens, (currentToken, index) => {
+    //   const nextToken = tokens[index + 1];
+    //   if (_.isUndefined(nextToken))             return true;
 
-      if (nextToken.line === currentToken.line) return false;
+    //   const isInsideStructure = indexIsInsideBoundsPairs(index + 1, boundsPairs);
+    //   if (isInsideStructure)                    return false;
 
-      const currentTokens = _.first(tokens, index + 1);
-      return tokensHaveBalancedGrouping(currentTokens);
-    });
+    //   if (nextToken.line === currentToken.line) return false;
 
-    return _.first(tokens, statementEndPos + 1);
+    //   const currentTokens = _.first(tokens, index + 1);
+    //   return tokensHaveBalancedGrouping(currentTokens);
+    // });
+
+    // return _.first(tokens, statementEndPos + 1);
   }
 
   startsWithPropDefinition(tokens = this.tokens) {

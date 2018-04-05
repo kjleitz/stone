@@ -285,11 +285,11 @@ class Node {
     const indexOfExtends  = parser.indexOfExtends();
     const derivationToken = tokens[indexOfFrom] && tokens[indexOfFrom + 1];
 
-    const shapeBlockBounds  = indexOfShaped  === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfShaped),  'openBrace');
-    const extendBlockBounds = indexOfExtends === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfExtends), 'openBrace');
+    const shapeBlockBounds   = indexOfShaped  === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfShaped),  'openBrace');
+    const extendsBlockBounds = indexOfExtends === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfExtends), 'openBrace');
 
-    const canonicalShapeBounds   = _.map(shapeBlockBounds,  boundary => boundary + indexOfShaped);
-    const canonicalExtendsBounds = _.map(extendBlockBounds, boundary => boundary + indexOfExtends);
+    const canonicalShapeBounds   = _.map(shapeBlockBounds,   boundary => boundary + indexOfShaped);
+    const canonicalExtendsBounds = _.map(extendsBlockBounds, boundary => boundary + indexOfExtends);
     
     const shapeOpenIndex  = canonicalShapeBounds[0];
     const shapeCloseIndex = canonicalShapeBounds[1];
@@ -596,7 +596,7 @@ class Node {
     const tokens         = options.tokens || parser.tokens;
     const hashColonIndex = parser.indexOfHashColon(tokens);
     if (hashColonIndex === -1) return null;
-    return this.hashPairNode(hashColonIndex, tokens);
+    return this.hashPair(hashColonIndex, tokens);
   }
 
   static functionDefinitionIfValid(options = { tokens: [], parser: null }) {
@@ -622,8 +622,8 @@ class Node {
     const functionCallIndex   = parser.indexOfFunctionCall(tokens);
     const firstAccessionIndex = _.min(_.without([dispatchIndex, functionCallIndex], -1));
     switch (firstAccessionIndex) {
-      case dispatchIndex:     return this.binaryOperationNode('dispatch', indexOfDispatch, tokens);
-      case functionCallIndex: return this.functionCallNode(functionCallIndex, tokens);
+      case dispatchIndex:     return this.binaryOperation('dispatch', dispatchIndex, tokens);
+      case functionCallIndex: return this.functionCall(functionCallIndex, tokens);
       default:                return null;
     }
   }
