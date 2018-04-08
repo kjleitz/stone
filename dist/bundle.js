@@ -3269,10 +3269,10 @@ var Node = function () {
       var derivationTokens = isDerived ? protoTokens.slice(fromIndex + 1, endOfDerivation + 1) : [];
 
       var endOfShape = isExtended ? extendsIndex - 1 : endIndex;
-      var shapeTokens = isShaped ? protoTokens.slice(shapedIndex + 1, endOfShape + 1) : [];
+      var shapeTokens = isShaped ? protoTokens.slice(shapedIndex + 2, endOfShape) : [];
 
       var endOfExtension = endIndex;
-      var extensionTokens = isExtended ? protoTokens.slice(extendsIndex + 1, endOfExtension + 1) : [];
+      var extensionTokens = isExtended ? protoTokens.slice(extendsIndex + 2, endOfExtension) : [];
 
       var shapeSyntaxer = new _syntaxer2.default(shapeTokens);
       var extensionSyntaxer = new _syntaxer2.default(extensionTokens);

@@ -317,10 +317,10 @@ class Node {
     const derivationTokens = isDerived ? protoTokens.slice(fromIndex + 1, endOfDerivation + 1) : [];
 
     const endOfShape       = isExtended ? extendsIndex - 1 : endIndex;
-    const shapeTokens      = isShaped ? protoTokens.slice(shapedIndex + 1, endOfShape + 1) : [];
+    const shapeTokens      = isShaped ? protoTokens.slice(shapedIndex + 2, endOfShape) : [];
 
     const endOfExtension   = endIndex;
-    const extensionTokens  = isExtended ? protoTokens.slice(extendsIndex + 1, endOfExtension + 1) : [];
+    const extensionTokens  = isExtended ? protoTokens.slice(extendsIndex + 2, endOfExtension) : [];
 
     const shapeSyntaxer     = new Syntaxer(shapeTokens);
     const extensionSyntaxer = new Syntaxer(extensionTokens);
