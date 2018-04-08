@@ -581,7 +581,7 @@ function boundsOfAllGuardsInTokens(tokens) {
 function boundsOfAllStructuresInTokens(tokens, options = { except: [], skipStart: false }) {
   const { except, skipStart } = options;
   const allStructureTypes  = ['group', 'function', 'proto', 'check', 'guard'];
-  const filteredStructures = _.without(allStructureTypes, except);
+  const filteredStructures = _.without(allStructureTypes, ...except);
   const structurePairFuncs = {
     group:    boundsOfAllGroupsInTokens,
     function: boundsOfAllFunctionDefinitionsInTokens,
@@ -710,6 +710,7 @@ class TokenParser {
   indexOfExtends(tokens = this.tokens)                { return indexOfExtends(tokens); }
 
   boundsOfFirstGroup(tokens = this.tokens)                     { return boundsOfFirstGroupInTokens(tokens); }
+  boundsOfFirstProtoDefinition(tokens = this.tokens)           { return boundsOfFirstProtoDefinitionInTokens(tokens); }
   boundsOfFirstConditional(operatorName, tokens = this.tokens) { return boundsOfFirstConditionalInTokens(operatorName, tokens); }
 
   // lastIndexOfIndentedBlock(startIndex = 0) {

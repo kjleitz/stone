@@ -44,6 +44,7 @@ const GRAMMAR = {
 
       // declaration
       extends: 'extends',
+      from:    'from',
       def:     'def',
       proto:   'proto',
       set:     'set',

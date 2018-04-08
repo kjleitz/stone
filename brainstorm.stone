@@ -132,10 +132,10 @@ proto Cat from Pet shaped {
     "#{sound} #{sound}... #{sound}!"
 }
 
-# bind a function at definition with <context> before the arguments
-proto Human shaped {
-  name:Str
-} extends {
-  def say_my_name<this>():Str
-    this.name
-}
+# # bind a function at definition with <context> before the arguments
+# proto Human shaped {
+#   name:Str
+# } extends {
+#   def say_my_name<this>():Str
+#     this.name
+# }

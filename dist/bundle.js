@@ -3221,45 +3221,69 @@ var Node = function () {
         blockNodes: blockSyntaxer.traverse()
       };
     }
+
+    // Tokens must start with the `proto` keyword
+
   }, {
     key: 'protoDefinition',
     value: function protoDefinition(tokens) {
-      var protoToken = tokens[0];
-      if (protoToken.name !== 'proto') throw _errors.SyntaxError.at(protoToken, 'Expected proto definition to begin');
-
       var parser = new _token_parser2.default(tokens);
-      var indexOfFrom = parser.indexOfFrom();
-      var indexOfShaped = parser.indexOfShaped();
-      var indexOfExtends = parser.indexOfExtends();
-      var derivationToken = tokens[indexOfFrom] && tokens[indexOfFrom + 1];
+      var boundsOfProto = parser.boundsOfFirstProtoDefinition();
+      if (_underscore2.default.isEmpty(boundsOfProto) || boundsOfProto[0] !== 0) {
+        throw _errors.SyntaxError.at(tokens[0], 'Expected proto definition to begin');
+      }
 
-      var shapeBlockBounds = indexOfShaped === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfShaped), 'openBrace');
-      var extendsBlockBounds = indexOfExtends === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfExtends), 'openBrace');
+      var protoTokens = tokens.slice(boundsOfProto[0], boundsOfProto[1] + 1);
+      var protoToken = protoTokens[0];
+      var protoParser = new _token_parser2.default(protoTokens);
 
-      var canonicalShapeBounds = _underscore2.default.map(shapeBlockBounds, function (boundary) {
-        return boundary + indexOfShaped;
+      var protoIndex = 0;
+      var fromIndex = protoParser.indexOfFrom();
+      var shapedIndex = protoParser.indexOfShaped();
+      var extendsIndex = protoParser.indexOfExtends();
+      var endIndex = protoTokens.length - 1;
+
+      var keywordIndices = [fromIndex, shapedIndex, extendsIndex];
+      var sortedIndices = _underscore2.default.sortBy(keywordIndices);
+      var orderIsValid = _underscore2.default.every(sortedIndices, function (n, m) {
+        return n === keywordIndices[m];
       });
-      var canonicalExtendsBounds = _underscore2.default.map(extendsBlockBounds, function (boundary) {
-        return boundary + indexOfExtends;
-      });
+      if (!orderIsValid) {
+        throw _errors.SyntaxError.at(protoToken, 'Proto sub-definitions (\'from\', \'shaped\', \'extends\') are out of order');
+      }
 
-      var shapeOpenIndex = canonicalShapeBounds[0];
-      var shapeCloseIndex = canonicalShapeBounds[1];
-      var shapeTokens = _underscore2.default.isEmpty(shapeBlockBounds) ? [] : tokens.slice(shapeOpenIndex + 1, shapeCloseIndex);
+      // hacky bullshit so that these three indices are still -1 for "unfound"
+      var firstKeywordIndex = (fromIndex + 1 || shapedIndex + 1 || extendsIndex + 1) - 1;
+      var secondKeywordIndex = (shapedIndex + 1 || extendsIndex + 1) - 1;
 
-      var extendsOpenIndex = canonicalExtendsBounds[0];
-      var extendsCloseIndex = canonicalExtendsBounds[1];
-      var extendsTokens = _underscore2.default.isEmpty(extendsBlockBounds) ? [] : tokens.slice(extendsOpenIndex + 1, extendsCloseIndex);
+      var hasFirstKeyword = firstKeywordIndex !== -1;
+      var hasSecondKeyword = secondKeywordIndex !== -1;
+      var isDerived = fromIndex !== -1;
+      var isShaped = shapedIndex !== -1;
+      var isExtended = extendsIndex !== -1;
+
+      var endOfName = hasFirstKeyword ? firstKeywordIndex - 1 : endIndex;
+      var nameTokens = protoTokens.slice(protoIndex + 1, endOfName + 1);
+
+      var endOfDerivation = hasSecondKeyword ? secondKeywordIndex - 1 : endIndex;
+      var derivationTokens = isDerived ? protoTokens.slice(fromIndex + 1, endOfDerivation + 1) : [];
+
+      var endOfShape = isExtended ? extendsIndex - 1 : endIndex;
+      var shapeTokens = isShaped ? protoTokens.slice(shapedIndex + 1, endOfShape + 1) : [];
+
+      var endOfExtension = endIndex;
+      var extensionTokens = isExtended ? protoTokens.slice(extendsIndex + 1, endOfExtension + 1) : [];
 
       var shapeSyntaxer = new _syntaxer2.default(shapeTokens);
-      var extendsSyntaxer = new _syntaxer2.default(extendsTokens);
+      var extensionSyntaxer = new _syntaxer2.default(extensionTokens);
 
       return {
         operation: 'protoDefinition',
         protoToken: protoToken,
-        derivationToken: derivationToken,
-        shapeBlockNodes: shapeSyntaxer.traverse(),
-        extendBlockNodes: extendsSyntaxer.traverse()
+        nameNode: this.fromStatement(nameTokens),
+        derivationNode: this.fromStatement(derivationTokens),
+        shapeNodes: shapeSyntaxer.traverse(),
+        extensionNodes: extensionSyntaxer.traverse()
       };
     }
   }, {
@@ -3946,6 +3970,8 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
+function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
+
 function tokensHaveBalancedGrouping(tokens) {
   var openStack = [];
   _underscore2.default.each(tokens, function (token) {
@@ -4532,7 +4558,7 @@ function boundsOfAllStructuresInTokens(tokens) {
       skipStart = options.skipStart;
 
   var allStructureTypes = ['group', 'function', 'proto', 'check', 'guard'];
-  var filteredStructures = _underscore2.default.without(allStructureTypes, except);
+  var filteredStructures = _underscore2.default.without.apply(_underscore2.default, [allStructureTypes].concat(_toConsumableArray(except)));
   var structurePairFuncs = {
     group: boundsOfAllGroupsInTokens,
     function: boundsOfAllFunctionDefinitionsInTokens,
@@ -4795,6 +4821,12 @@ var TokenParser = function () {
       return boundsOfFirstGroupInTokens(tokens);
     }
   }, {
+    key: 'boundsOfFirstProtoDefinition',
+    value: function boundsOfFirstProtoDefinition() {
+      var tokens = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : this.tokens;
+      return boundsOfFirstProtoDefinitionInTokens(tokens);
+    }
+  }, {
     key: 'boundsOfFirstConditional',
     value: function boundsOfFirstConditional(operatorName) {
       var tokens = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : this.tokens;
@@ -4922,6 +4954,7 @@ var GRAMMAR = {
 
       // declaration
       extends: 'extends',
+      from: 'from',
       def: 'def',
       proto: 'proto',
       set: 'set',

@@ -275,39 +275,63 @@ class Node {
     };
   }
 
+  // Tokens must start with the `proto` keyword
   static protoDefinition(tokens) {
-    const protoToken = tokens[0];
-    if (protoToken.name !== 'proto') throw SyntaxError.at(protoToken, 'Expected proto definition to begin');
+    const parser        = new TokenParser(tokens);
+    const boundsOfProto = parser.boundsOfFirstProtoDefinition();
+    if (_.isEmpty(boundsOfProto) || boundsOfProto[0] !== 0) {
+      throw SyntaxError.at(tokens[0], 'Expected proto definition to begin');
+    }
 
-    const parser          = new TokenParser(tokens);
-    const indexOfFrom     = parser.indexOfFrom();
-    const indexOfShaped   = parser.indexOfShaped();
-    const indexOfExtends  = parser.indexOfExtends();
-    const derivationToken = tokens[indexOfFrom] && tokens[indexOfFrom + 1];
+    const protoTokens = tokens.slice(boundsOfProto[0], boundsOfProto[1] + 1);
+    const protoToken  = protoTokens[0];
+    const protoParser = new TokenParser(protoTokens);
 
-    const shapeBlockBounds   = indexOfShaped  === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfShaped),  'openBrace');
-    const extendsBlockBounds = indexOfExtends === -1 ? [] : parser.boundsOfFirstGroup(tokens.slice(indexOfExtends), 'openBrace');
+    const protoIndex   = 0;
+    const fromIndex    = protoParser.indexOfFrom();
+    const shapedIndex  = protoParser.indexOfShaped();
+    const extendsIndex = protoParser.indexOfExtends();
+    const endIndex     = protoTokens.length - 1;
 
-    const canonicalShapeBounds   = _.map(shapeBlockBounds,   boundary => boundary + indexOfShaped);
-    const canonicalExtendsBounds = _.map(extendsBlockBounds, boundary => boundary + indexOfExtends);
-    
-    const shapeOpenIndex  = canonicalShapeBounds[0];
-    const shapeCloseIndex = canonicalShapeBounds[1];
-    const shapeTokens = _.isEmpty(shapeBlockBounds) ? [] : tokens.slice(shapeOpenIndex + 1, shapeCloseIndex);
+    const keywordIndices = [fromIndex, shapedIndex, extendsIndex];
+    const sortedIndices  = _.sortBy(keywordIndices);
+    const orderIsValid   = _.every(sortedIndices, (n, m) => n === keywordIndices[m]);
+    if (!orderIsValid) {
+      throw SyntaxError.at(protoToken, `Proto sub-definitions ('from', 'shaped', 'extends') are out of order`)
+    }
 
-    const extendsOpenIndex  = canonicalExtendsBounds[0];
-    const extendsCloseIndex = canonicalExtendsBounds[1];
-    const extendsTokens = _.isEmpty(extendsBlockBounds) ? [] : tokens.slice(extendsOpenIndex + 1, extendsCloseIndex);
+    // hacky bullshit so that these three indices are still -1 for "unfound"
+    const firstKeywordIndex  = (fromIndex + 1 || shapedIndex + 1 || extendsIndex + 1) - 1;
+    const secondKeywordIndex = (shapedIndex + 1 || extendsIndex + 1) - 1;
 
-    const shapeSyntaxer   = new Syntaxer(shapeTokens);
-    const extendsSyntaxer = new Syntaxer(extendsTokens);
+    const hasFirstKeyword  = firstKeywordIndex  !== -1;
+    const hasSecondKeyword = secondKeywordIndex !== -1;
+    const isDerived        = fromIndex          !== -1;
+    const isShaped         = shapedIndex        !== -1;
+    const isExtended       = extendsIndex       !== -1;
+
+    const endOfName        = hasFirstKeyword ? firstKeywordIndex - 1 : endIndex;
+    const nameTokens       = protoTokens.slice(protoIndex + 1, endOfName + 1);
+
+    const endOfDerivation  = hasSecondKeyword ? secondKeywordIndex - 1 : endIndex;
+    const derivationTokens = isDerived ? protoTokens.slice(fromIndex + 1, endOfDerivation + 1) : [];
+
+    const endOfShape       = isExtended ? extendsIndex - 1 : endIndex;
+    const shapeTokens      = isShaped ? protoTokens.slice(shapedIndex + 1, endOfShape + 1) : [];
+
+    const endOfExtension   = endIndex;
+    const extensionTokens  = isExtended ? protoTokens.slice(extendsIndex + 1, endOfExtension + 1) : [];
+
+    const shapeSyntaxer     = new Syntaxer(shapeTokens);
+    const extensionSyntaxer = new Syntaxer(extensionTokens);
 
     return {
       operation: 'protoDefinition',
       protoToken,
-      derivationToken,
-      shapeBlockNodes:  shapeSyntaxer.traverse(),
-      extendBlockNodes: extendsSyntaxer.traverse(),
+      nameNode:       this.fromStatement(nameTokens),
+      derivationNode: this.fromStatement(derivationTokens),
+      shapeNodes:     shapeSyntaxer.traverse(),
+      extensionNodes: extensionSyntaxer.traverse(),
     };
   }
 
