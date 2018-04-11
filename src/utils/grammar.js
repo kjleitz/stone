@@ -2,11 +2,11 @@ const GRAMMAR = {
   types: [
     'whitespace',
     'comment',
-    'word',
     'string',
     'number',
     'regex',
     'operator',
+    'word',
     'grouping',
     'delimiter',
   ],
@@ -36,11 +36,12 @@ const GRAMMAR = {
       true:  'true',
       super: 'super',
 
-      // logical flow
-      else:   'else',
-      if:     'if',
+      // flow control
+      check:  'check',
+      guard:  'guard',
       raise:  'raise',
       return: 'return',
+      slide:  'slide',
 
       // declaration
       extends: 'extends',

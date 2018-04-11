@@ -270,6 +270,7 @@ class Node {
       operation: 'propSetter',
       nameToken,
       colonToken,
+      setToken,
       typeToken,
       blockNodes: blockSyntaxer.traverse(),
     };
@@ -395,20 +396,18 @@ class Node {
   }
 
   static rocketCondition(tokens) {
-    const rocketIndex = indexOfRocket(tokens);
+    const parser      = new TokenParser(tokens);
+    const rocketIndex = parser.indexOfRocket();
     if (rocketIndex === -1) {
       throw SyntaxError.at(tokens[0], 'Expected rocket condition to begin');
     }
 
-    const boundsOfCondish = boundsOfFirstRocketConditionInTokens(tokens);
-    const [startIndex, endIndex] = boundsOfCondish;
-    if (startIndex !== 0) {
-      throw SyntaxError.at(tokens[0], 'Expected rocket condition to begin');
-    }
+    const endIndex = parser.lastIndexOfRocketCondition();
 
     const rocketToken = tokens[rocketIndex];
     const leftTokens  = _.first(tokens, rocketIndex);
-    const rightTokens = tokens.slice(rocketIndex + 1, endIndex);
+    const rightTokens = tokens.slice(rocketIndex + 1, endIndex + 1);
+
     const leftSyntaxer  = new Syntaxer(leftTokens);
     const rightSyntaxer = new Syntaxer(rightTokens);
 
@@ -426,7 +425,7 @@ class Node {
       throw SyntaxError.at(exhaustToken, 'Expected exhaust condition to begin');
     }
 
-    const rightNodes  = tokens.slice(1);
+    const rightNodes    = tokens.slice(1);
     const rightSyntaxer = new Syntaxer(rightNodes);
 
     return {
@@ -436,27 +435,33 @@ class Node {
     };
   }
 
+  // Assumes tokens are comprised solely of a sequence of conditions
   static conditionNodes(tokens, nodeList = []) {
-    const indexOfRocket = indexOfRocket(tokens);
-    if (indexOfRocket === -1) {
-      if (firstToken.name === 'exhaust') {
-        const exhaustNode = this.exhaustCondition(tokens);
-        nodeList.push(exhaustNode);
+    const firstToken = tokens[0];
+    const parser = new TokenParser(tokens);
+
+    if (firstToken && firstToken.name === 'exhaust') {
+      const exhaustEndIndex = parser.lastIndexOfExhaustCondition();
+      if (tokens.length !== exhaustEndIndex + 1) {
+        const invalidToken = tokens[exhaustEndIndex + 1];
+        throw SyntaxError.at(invalidToken, 'Unrecognized continuation of exhaust condition');
       }
+
+      const exhaustTokens = _.first(tokens, exhaustEndIndex);
+      const exhaustNode   = this.exhaustCondition(exhaustTokens);
+      nodeList.push(exhaustNode);
       return nodeList;
     }
 
-    const boundsOfCondition = boundsOfFirstRocketConditionInTokens(tokens);
-    if (_.isEmpty(boundsOfCondition)) {
-      throw SyntaxError.at(tokens[indexOfRocket], 'Expected rocket condition');
+    const firstConditionEndIndex = parser.lastIndexOfRocketCondition();
+    if (firstConditionEndIndex === -1) {
+      throw SyntaxError.at(firstToken, 'Could not find the end of the rocket condition starting');
     }
 
-    const [conditionStartIndex, conditionEndIndex] = boundsOfCondition;
-    const conditionTokens = tokens.slice(conditionStartIndex, conditionEndIndex + 1);
-    const rocketNode      = this.rocketCondition(conditionTokens);
-    const restOfTokens    = tokens.slice(conditionEndIndex + 1);
-    nodeList.push(rocketNode);
+    const [conditionTokens, restOfTokens] = _.partition(tokens, (_t, i) => i <= firstConditionEndIndex);
+    const conditionNode = this.rocketCondition(conditionTokens);
 
+    nodeList.push(conditionNode);
     return this.conditionNodes(restOfTokens, nodeList);
   }
 

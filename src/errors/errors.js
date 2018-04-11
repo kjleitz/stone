@@ -1,3 +1,5 @@
+import StringParser from '../parse/string_parser';
+
 class LexError {
   constructor(text) {
     this.parser = new StringParser(text);

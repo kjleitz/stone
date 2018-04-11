@@ -31,37 +31,6 @@ function indexIsInsideBoundsPairs(index, boundsPairs) {
 // ---------------------------------- //
 
 
-function lastIndexOfRocketCondition(tokens) {
-  const rocketIndex = indexOfRocketInTokens(tokens);
-  if (rocketIndex === -1) return -1;
-
-  const rocketAndRest         = tokens.slice(rocketIndex);
-  const maxIndexOfCondition   = lastIndexOfIndentedBlock(rocketAndRest);
-  const rocketTilMax          = _.first(rocketAndRest, maxIndexOfCondition + 1);
-  const nestedStructureBounds = boundsOfAllStructuresInTokens(rocketTilMax);
-
-  const exhaustIndex = _.findIndex(rocketTilMax, (token, index) => {
-    if (token.name !== 'exhaust') return false;
-
-    const isInsideStructure = indexIsInsideBoundsPairs(index, nestedStructureBounds);
-    if (isInsideStructure)        return false;
-
-    return true;
-  });
-
-  if (exhaustIndex === -1) return maxIndexOfCondition;
-
-  return rocketIndex + (exhaustIndex - 1);
-}
-
-function lastIndexOfExhaustCondition(tokens) {
-  const exhaustIndex = indexOfExhaustInTokens(tokens);
-  if (exhaustIndex === -1) return -1;
-
-  const exhaustAndRest = tokens.slice(exhaustIndex);
-  return lastIndexOfIndentedBlock(exhaustAndRest);
-}
-
 // Tokens must start with the line that constructs the indented block, e.g.,
 //
 // if tokens consist of...
@@ -125,6 +94,34 @@ function lastIndexOfIndentedBlock(tokens) {
   return lastIndentedTokenIndex;
 }
 
+function lastIndexOfRocketCondition(tokens) {
+  const rocketIndex = indexOfRocket(tokens);
+  if (rocketIndex === -1) return -1;
+
+  const rocketAndRest     = tokens.slice(rocketIndex);
+  const conditionMaxIndex = lastIndexOfIndentedBlock(rocketAndRest);
+  const rocketTilMax      = _.first(rocketAndRest, conditionMaxIndex + 1);
+  const structureBounds   = boundsOfAllStructuresInTokens(rocketTilMax);
+
+  const exhaustIndex = _.findIndex(rocketTilMax, (token, index) => {
+    if (token.name !== 'exhaust') return false;
+
+    const isInsideStructure = indexIsInsideBoundsPairs(index, structureBounds);
+    if (isInsideStructure)        return false;
+
+    return true;
+  });
+
+  return rocketIndex + (exhaustIndex === -1 ? conditionMaxIndex : exhaustIndex - 1);
+}
+
+function lastIndexOfExhaustCondition(tokens) {
+  const exhaustToken = tokens[0];
+  if (_.isUndefined(exhaustToken) || exhaustToken.name !== 'exhaust') return -1;
+
+  return lastIndexOfIndentedBlock(tokens);
+}
+
 
 // ----------------------- //
 // ARBITRARY INDEX FINDERS //
@@ -159,7 +156,7 @@ function indexOfBinaryOperation(operationName, tokens, { validLeftTypes, validRi
   const boundsPairs = boundsOfAllStructuresInTokens(tokens, { except });
 
   return _.findIndex(tokens, (token, index) => {
-    if (!_.contains(operatorNames, token.name)) return false;
+    if (index === 0 || !_.contains(operatorNames, token.name)) return false;
 
     const isInsideStructure = indexIsInsideBoundsPairs(index, boundsPairs);
     if (isInsideStructure) return false;
@@ -354,11 +351,6 @@ function indexOfFunctionColon(tokens) {
 }
 
 function indexOfProto(tokens) {
-  // const boundsPairs = boundsOfAllStructuresInTokens(tokens, { except: ['proto'] });
-  // return _.findIndex(tokens, (token, index) => {
-  //   if (token.name !== 'proto') return false;
-  //   return this.indexIsInsideBoundsPairs(index, boundsPairs);
-  // });
   return _.findIndex(tokens, { name: 'proto' });
 }
 
@@ -459,60 +451,6 @@ function boundsOfFirstProtoDefinitionInTokens(tokens) {
   const protoTokens = tokens.slice(startIndex);
   const endIndex    = startIndex + lastIndexOfIndentedBlock(protoTokens);
   return [startIndex, endIndex];
-
-  // const firstBraceGroupBounds   = boundsOfFirstGroupInTokens(protoTokens, 'openBrace');
-  // const firstOpenBraceIndex     = firstBraceGroupBounds[0];
-  // const 
-  // if (_.isUndefined(firstOpenBraceIndex)) {
-  //   return [startIndex, lastIndexOfIndentedBlock(protoTokens)];
-  // }
-
-
-  // const firstOpenBrace          = protoTokens[firstOpenBraceIndex];
-  // const tokensTilFirstBrace     = _.first(protoTokens, firstOpenBraceIndex);
-  // const lastIndexBeforeBlocks   = lastIndexOfIndentedBlock(tokensTilFirstBrace);
-  // const lastIndexBeforeBlocks   = lastIndexOfIndentedBlock(protoTokens);
-  // const firstBlockIsPartOfProto = lastIndexBeforeBlocks === firstOpenBraceIndex - 1;
-  // if (!firstBlockIsPartOfProto) return [startIndex, startIndex + lastIndexBeforeBlocks];
-
-  // const blockDescriptorToken = protoTokens[lastIndexBeforeBlocks];
-  // if (!_.contains(blockDescriptorToken.name, ['shaped', 'extends'])) {
-  //   throw SyntaxError.at(blockDescriptorToken, 'Expected "shaped" or "extends" keyword before brace group');
-  // }
-
-
-  // const 
-  // const firstOpenIsPartOfProto = lastIndexOfIndentedBlock(tokensTilFirstBrace) === firstOpenBraceIndex - 1;
-
-  // if (!firstOpenIsPartOfProto)
-  // const hasGroupGroup    = firstOpenBraceIndex !== -1 && !!firstOpenBrace && firstBraceToken.name === 'openBrace';
-  // const first
-  
-
-
-  // // The "from" keyword should only happen at the third token of a proto definition,
-  // // at the moment. Might change in the future for, e.g., namespacing or something.
-  // const indexOfFrom     = _.findIndex(protoTokens.slice(0, 3), { name: 'from' });
-  // // The "shaped" keyword should only be within the first five tokens of a proto
-  // // definition. Might change for the same reasons "from" does.
-  // const indexOfShaped   = _.findIndex(protoTokens.slice(0, 5), { name: 'shaped' });
-  // // 
-  // const indexOfExtends  = indexOfBinaryOperation('extensionDefinition', protoTokens, { validLeftTypes, validRightTypes });
-
-  // const lastDescriptorIndex = _.max([indexOfFrom, indexOfShaped, indexOfExtends]);
-  // const descriptorToken     = protoTokens[lastDescriptorIndex];
-  // if (lastDescriptorIndex === -1)          return [startIndex, startIndex + 1];
-  // if (lastDescriptorIndex === indexOfFrom) return [startIndex, startIndex + indexOfFrom + 1];
-
-  // const restOfTokens  = protoTokens.slice(lastDescriptorIndex);
-  // const boundsOfBlock = boundsOfFirstGroupInTokens(restOfTokens);
-  // if (_.isEmpty(boundsOfBlock)) {
-  //   throw SyntaxError.at(descriptorToken, `Expected block for ${descriptorToken.name} descriptor`);
-  // }
-
-  // const canonicalBounds = _.map(boundsOfBlock, boundary => boundary + startIndex + lastDescriptorIndex);
-  // const endIndex        = canonicalBounds[1];
-  // return [startIndex, endIndex];
 }
 
 function boundsOfFirstConditionalInTokens(conditionalOperatorName, tokens) {
@@ -617,22 +555,6 @@ class TokenParser {
 
     const endIndex = lastIndexOfIndentedBlock(tokens);
     return _.first(tokens, endIndex + 1);
-
-    // const boundsPairs     = boundsOfAllStructuresInTokens(tokens);
-    // const statementEndPos = _.findIndex(tokens, (currentToken, index) => {
-    //   const nextToken = tokens[index + 1];
-    //   if (_.isUndefined(nextToken))             return true;
-
-    //   const isInsideStructure = indexIsInsideBoundsPairs(index + 1, boundsPairs);
-    //   if (isInsideStructure)                    return false;
-
-    //   if (nextToken.line === currentToken.line) return false;
-
-    //   const currentTokens = _.first(tokens, index + 1);
-    //   return tokensHaveBalancedGrouping(currentTokens);
-    // });
-
-    // return _.first(tokens, statementEndPos + 1);
   }
 
   startsWithPropDefinition(tokens = this.tokens) {
@@ -709,84 +631,12 @@ class TokenParser {
   indexOfShaped(tokens = this.tokens)                 { return indexOfShaped(tokens); }
   indexOfExtends(tokens = this.tokens)                { return indexOfExtends(tokens); }
 
+  lastIndexOfRocketCondition(tokens = this.tokens)  { return lastIndexOfRocketCondition(tokens); }
+  lastIndexOfExhaustCondition(tokens = this.tokens) { return lastIndexOfExhaustCondition(tokens); }
+
   boundsOfFirstGroup(tokens = this.tokens)                     { return boundsOfFirstGroupInTokens(tokens); }
   boundsOfFirstProtoDefinition(tokens = this.tokens)           { return boundsOfFirstProtoDefinitionInTokens(tokens); }
   boundsOfFirstConditional(operatorName, tokens = this.tokens) { return boundsOfFirstConditionalInTokens(operatorName, tokens); }
-
-  // lastIndexOfIndentedBlock(startIndex = 0) {
-  //   const firstToken      = this.tokens[startToken];
-  //   const structureBounds = this.boundsOfAllStructures({ startIndex });
-  //   return _.findIndex(this.tokens, (currentToken, index) => {
-  //     if (index < startIndex)                   return false;
-
-  //     const isInsideStructure = this.indexIsInsideBoundsPairs(index + 1, structureBounds);
-  //     if (isInsideStructure)                    return false;
-
-  //     const nextToken = this.tokens[index + 1];
-  //     if (_.isUndefined(nextToken))             return true;
-  //     if (nextToken.line === currentToken.line) return false;
-  //     if (nextToken.indent > firstToken.indent) return false;
-
-  //     return true;
-  //   });
-  // }
-
-  // // assumes the tokens start with the condition... kinda janky, but that's how
-  // // it's currently used. FIXME.
-  // boundsOfFirstRocketCondition() {
-  //   const indexOfRocket = this.indexOfRocket();
-  //   if (indexOfRocket === -1) return [];
-
-  //   const boundsPairs = this.boundsOfAllStructures();
-  //   const conditionEndIndex = _.findIndex(tokens, (token, index) => {
-  //     if (index <= indexOfRocket)          return false;
-
-  //     const isInsideStructure = this.indexIsInsideBoundsPairs(index, boundsPairs);
-  //     if (isInsideStructure)               return false;
-
-  //     const nextToken = tokens[index + 1];
-  //     if (nextToken.name === 'exhaust')    return true;
-  //     if (nextToken.line === token.line)   return false;
-  //     if (nextToken.indent > token.indent) return false;
-
-  //     return true;
-  //   });
-
-  //   if (conditionEndIndex === -1) {
-  //     throw SyntaxError.at(tokens[indexOfRocket], 'Could not find the end of the rocket condition');
-  //   }
-
-  //   return [0, conditionEndIndex];
-  // }
-
-  // // memoized per args hash
-  // boundsOfAllStructures(options = { except: [], startIndex: 0 }) {
-  //   const { except, startIndex } = options;
-  //   const allStructureTypes     = ['group', 'function', 'proto', 'check', 'guard'];
-  //   const filteredStructures    = _.without(allStructureTypes, except);
-  //   const memoKey               = `${filteredStructures},${startIndex}`;
-  //   this._boundsOfAllStructures[memoKey] = this._boundsOfAllStructures[memoKey] || (function(parser, opts = {}) {
-  //     const structurePairFuncs = {
-  //       group:    _.bind(parser.boundsOfAllGroups, parser),
-  //       function: _.bind(parser.boundsOfAllFunctionDefinitions, parser),
-  //       proto:    _.bind(parser.boundsOfAllProtoDefinitions, parser),
-  //       check:    _.bind(parser.boundsOfAllChecks, parser),
-  //       guard:    _.bind(parser.boundsOfAllGuards, parser),
-  //     };
-
-  //     const structureBounds = _.reduce(options.filteredStructures, (boundsPairs, structureType) => {
-  //       const pairsForStructure = structurePairFuncs[structureType]();
-  //       return boundsPairs.concat(pairsForStructure);
-  //     }, []);
-
-  //     if (_.isEmpty(structureBounds)) return structureBounds;
-
-  //     const boundsStartIndex = _.findIndex(structureBounds, boundsPair => startIndex <= boundsPair[0]);
-  //     return structureBounds.slice(boundsStartIndex);
-  //   })(this, { filteredStructures, startIndex });
-
-  //   return this._boundsOfAllStructures;
-  // }
 }
 
 export default TokenParser;
