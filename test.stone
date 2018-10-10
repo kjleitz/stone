@@ -176,58 +176,57 @@ bar = check
 bar
 #=> 'blah'
 
-## A `check` with an arg evaluates the left-hand expressions like this:
-##   - if there is a `?` then it interpolates `bar` there, and it will match
-##     only if the expression evaluates to `true`
-##   - if there is no `?` then it will match against the value of `bar`, using
-##     `bar`'s method `match`, which falls back to `==` if it's not explicitly
-##     defined on the callee (an example of the advantage of `match` over `==`
-##     here would be checking against regular expressions)
-#baz = check (bar)
-#  'crap'       => 'I am crap!'
-#  'blah'       => 'I am blah!'
-#  '1'          => 'I am the number 1!'
-#  '2'          => 'I am the number 2!'
-#  ?.match('2') => 'does the same as the one above!'
-#  /^[3-9]$/    => 'I am under ten!'
-#  ?.to_num() >= 10 => 'I am ten or higher!'
-#  default_to_crap  => 'bar is equal to `true`? that doesn't seem right.'
-#  _> "hm. maybe I'm 'default'?"
-#
-## lookin' for crap
-#guard
-#  baz.is_string() => console.log("baz couldn't possibly be 'crap'")
-#  baz.length == 4 => console.log("baz isn't the right size to be 'crap'")
-#  baz.match(/ra/) => console.log("baz doesn't have letters that are in 'crap'")
-#  _> console.log("baz could possibly be 'crap'")
-#
-## lookin' for crap again
-#guard (baz)
-#  ?.is_string() => console.log("baz couldn't possibly be 'crap'")
-#  ?.length == 4 => console.log("baz isn't the right size to be 'crap'")
-#  /ra/          => console.log("baz doesn't have letters that are in 'crap'")
-#  _> console.log("baz could possibly be 'crap'")
-#
-#def exclaim_about(something):
-#  guard something.is_present() => return
-#  console.log("this is a SUBSTANTIAL #{something}, isn't it???")
-#
-#exclaim_about(null)
-## prints nothing
-#exclaim_about({ foo: 'bar' })
-## prints "this is a SUBSTANTIAL { foo: 'bar' }, isn't it???"
-#
-## equivalent to the following (but these are much uglier/not immediately obvious what's going on):
-#
-#def exclaim_about(something):
-#  guard (something) ?.is_present() => return
-#  console.log("this is a SUBSTANTIAL #{something}, isn't it???")
-#
-#def exclaim_about(something):
-#  check !something.is_present() => return
-#  console.log("this is a SUBSTANTIAL #{something}, isn't it???")
-#
-#def exclaim_about(something):
-#  check (something) !?.is_present() => return
-#  console.log("this is a SUBSTANTIAL #{something}, isn't it???")
-#
+# A `check` with an arg evaluates the left-hand expressions like this:
+#   - if there is a `?` then it interpolates `bar` there, and it will match
+#     only if the expression evaluates to `true`
+#   - if there is no `?` then it will match against the value of `bar`, using
+#     `bar`'s method `match`, which falls back to `==` if it's not explicitly
+#     defined on the callee (an example of the advantage of `match` over `==`
+#     here would be checking against regular expressions)
+baz = check (bar)
+  'crap'       => 'I am crap!'
+  'blah'       => 'I am blah!'
+  '1'          => 'I am the number 1!'
+  '2'          => 'I am the number 2!'
+  ?.match('2') => 'does the same as the one above!'
+  /^[3-9]$/    => 'I am under ten!'
+  ?.to_num() >= 10 => 'I am ten or higher!'
+  default_to_crap  => 'bar is equal to `true`? that doesn\'t seem right.'
+  _> "hm. maybe I'm 'default'?"
+
+# lookin' for crap
+guard
+  baz.is_string() => console.log("baz couldn't possibly be 'crap'")
+  baz.length == 4 => console.log("baz isn't the right size to be 'crap'")
+  baz.match(/ra/) => console.log("baz doesn't have letters that are in 'crap'")
+  _> console.log("baz could possibly be 'crap'")
+
+# lookin' for crap again
+guard (baz)
+  ?.is_string() => console.log("baz couldn't possibly be 'crap'")
+  ?.length == 4 => console.log("baz isn't the right size to be 'crap'")
+  /ra/          => console.log("baz doesn't have letters that are in 'crap'")
+  _> console.log("baz could possibly be 'crap'")
+
+def exclaim_about(something):
+  guard something.is_present() => return
+  console.log("this is a SUBSTANTIAL #{something}, isn't it???")
+
+exclaim_about(null)
+# prints nothing
+exclaim_about({ foo: 'bar' })
+# prints "this is a SUBSTANTIAL { foo: 'bar' }, isn't it???"
+
+# equivalent to the following (but these are much uglier/not immediately obvious what's going on):
+
+def exclaim_about(something):
+  guard (something) ?.is_present() => return
+  console.log("this is a SUBSTANTIAL #{something}, isn't it???")
+
+def exclaim_about(something):
+  check !something.is_present() => return
+  console.log("this is a SUBSTANTIAL #{something}, isn't it???")
+
+def exclaim_about(something):
+  check (something) !?.is_present() => return
+  console.log("this is a SUBSTANTIAL #{something}, isn't it???")

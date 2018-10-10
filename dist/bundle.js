@@ -3670,6 +3670,7 @@ var GRAMMAR = {
       this: 'this',
       true: 'true',
       super: 'super',
+      '?': 'reference',
 
       // flow control
       check: 'check',
@@ -3740,7 +3741,7 @@ var GRAMMAR = {
   firstCharMatches: {
     whitespace: /\s/,
     comment: /#/,
-    word: /[_A-Za-z]/,
+    word: /[_A-Za-z?]/,
     string: /['"]/,
     number: /[\d.]/, // no negative; leading "-" will be unary operator
     regex: /\//,
@@ -3758,9 +3759,9 @@ var GRAMMAR = {
     // => literal as-is; to be ignored
     comment: /^#.*?(\n|$)/,
 
-    // (underscore || letter), (word character)*
+    // ((underscore || letter), (word character)*) || single question mark
     // => match predefined set of key words, or variable as-is
-    word: /^[_A-Za-z]\w*/,
+    word: /^[_A-Za-z]\w*|\?/,
 
     // a quote, (any escaped char || anything but the quote)*, the quote
     // => literal as-is
